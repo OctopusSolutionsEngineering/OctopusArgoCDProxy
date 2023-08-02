@@ -6,6 +6,7 @@ import (
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/logging"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/octopus"
 	"io"
+	"time"
 )
 
 type CreateReleaseHandler struct {
@@ -44,7 +45,9 @@ func (c CreateReleaseHandler) CreateRelease(reader *io.ReadCloser) error {
 		return err
 	}
 
-	err = c.octo.CreateAndDeployRelease(applicationUpdateMessage.Application, applicationUpdateMessage.Namespace)
+	timestamp := time.Now().Format("2006.01.02.150405")
+
+	err = c.octo.CreateAndDeployRelease(applicationUpdateMessage.Application, applicationUpdateMessage.Namespace, timestamp)
 
 	if err != nil {
 		return err

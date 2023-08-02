@@ -3,8 +3,8 @@ package octopus
 import (
 	"errors"
 	"github.com/OctopusDeploy/go-octopusdeploy/octopusdeploy"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/logging"
 	"github.com/samber/lo"
-	"go.uber.org/zap"
 	"net/url"
 	"os"
 	"regexp"
@@ -23,7 +23,7 @@ type ArgoCDProject struct {
 
 type LiveOctopusClient struct {
 	client *octopusdeploy.Client
-	logger *zap.Logger
+	logger logging.AppLogger
 }
 
 func NewLiveOctopusClient() (*LiveOctopusClient, error) {
@@ -33,7 +33,7 @@ func NewLiveOctopusClient() (*LiveOctopusClient, error) {
 		return nil, err
 	}
 
-	logger, err := zap.NewProduction()
+	logger, err := logging.NewDevProdLogger()
 
 	if err != nil {
 		return nil, err
@@ -45,9 +45,7 @@ func NewLiveOctopusClient() (*LiveOctopusClient, error) {
 	}, nil
 }
 
-func (o *LiveOctopusClient) CreateAndDeployRelease(application string, namespace string) error {
-	releaseVersion := "SHA and datetime"
-
+func (o *LiveOctopusClient) CreateAndDeployRelease(application string, namespace string, releaseVersion string) error {
 	projects, err := o.getProject(application, namespace)
 
 	if err != nil {
@@ -80,6 +78,9 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(application string, namespace
 		if err != nil {
 			return err
 		}
+
+		o.logger.GetLogger().Info("Created release " + release.ID + " and deployment " + deployment.ID +
+			" in environment " + project.Environment + " for project " + project.Project.Name)
 
 	}
 
