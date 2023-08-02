@@ -5,21 +5,20 @@ import (
 	"github.com/OctopusDeploy/go-octopusdeploy/octopusdeploy"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
-	"golang.org/x/exp/slices"
 	"net/url"
 	"os"
 	"regexp"
 	"strings"
 )
 
-const MaxInt = 4294967295
+const MaxInt = 2147483647
 
-var ApplicationNameVariable = regexp.MustCompile("^ArgoCD.Application\\[([^[]]*?)].Environment$")
-var ApplicationNamespaceVariable = regexp.MustCompile("^ArgoCD.Application\\[([^[]]*?)].Namespace$")
+var ApplicationEnvironmentVariable = regexp.MustCompile("^ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.Environment$")
+var ApplicationNamespaceVariable = regexp.MustCompile("^ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.Namespace$")
 
 type ArgoCDProject struct {
-	Project      *octopusdeploy.Project
-	Environments []string
+	Project     *octopusdeploy.Project
+	Environment string
 }
 
 type LiveOctopusClient struct {
@@ -65,17 +64,23 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(application string, namespace
 		release := octopusdeploy.NewRelease(defaultChannel.ID, project.Project.ID, releaseVersion)
 		release, err = o.client.Releases.Add(release)
 
-		for _, environment := range project.Environments {
-
-			environmentId, err := o.getEnvironmentId(environment)
-
-			if err != nil {
-				return err
-			}
-
-			deployment := octopusdeploy.NewDeployment(environmentId, release.ID)
-			deployment, err = o.client.Deployments.Add(deployment)
+		if err != nil {
+			return err
 		}
+
+		environmentId, err := o.getEnvironmentId(project.Environment)
+
+		if err != nil {
+			return err
+		}
+
+		deployment := octopusdeploy.NewDeployment(environmentId, release.ID)
+		deployment, err = o.client.Deployments.Add(deployment)
+
+		if err != nil {
+			return err
+		}
+
 	}
 
 	return nil
@@ -114,34 +119,24 @@ func (o *LiveOctopusClient) getProject(application string, namespace string) ([]
 			return nil, false
 		}
 
-		appNameEnvironments := lo.FlatMap(variables.Variables, func(variable *octopusdeploy.Variable, index int) []string {
-			match := ApplicationNameVariable.FindStringSubmatch(variable.Name)
+		appNameEnvironments := lo.FilterMap(variables.Variables, func(variable *octopusdeploy.Variable, index int) (string, bool) {
+			match := ApplicationEnvironmentVariable.FindStringSubmatch(variable.Name)
 
-			if len(match) != 2 || match[1] != namespace {
-				return []string{}
+			if len(match) != 2 || match[1] != namespace+"/"+application {
+				return "", false
 			}
 
-			return match[1:1]
+			return variable.Value, true
 		})
 
-		appNamespaceEnvironments := lo.FlatMap(variables.Variables, func(variable *octopusdeploy.Variable, index int) []string {
-			match := ApplicationNamespaceVariable.FindStringSubmatch(variable.Name)
+		if len(appNameEnvironments) != 0 {
+			return &ArgoCDProject{
+				Project:     project,
+				Environment: appNameEnvironments[0],
+			}, true
+		}
 
-			if len(match) != 2 || match[1] != application {
-				return []string{}
-			}
-
-			return match[1:1]
-		})
-
-		commonEnvironments := lo.Filter(appNameEnvironments, func(item string, index int) bool {
-			return slices.Index(appNamespaceEnvironments, item) != -1
-		})
-
-		return &ArgoCDProject{
-			Project:      project,
-			Environments: commonEnvironments,
-		}, true
+		return nil, false
 	})
 
 	return matchingProjects, nil
