@@ -22,6 +22,7 @@ const MaxInt = 2147483647
 var ApplicationEnvironmentVariable = regexp.MustCompile("^Metadata.ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.Environment$")
 var ApplicationImageVersionVariable = regexp.MustCompile("^Metadata.ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.ImageForReleaseVersion$")
 
+// LiveOctopusClient interacts with a live Octopus API endpoint, and implements caching to reduce network calls.
 type LiveOctopusClient struct {
 	client    *octopusdeploy.Client
 	logger    logging.AppLogger
