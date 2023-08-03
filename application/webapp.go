@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/hanlders"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/jsonex"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
 	"net/http"
 	"os"
@@ -32,7 +33,18 @@ func start(createReleaseHandler *hanlders.CreateReleaseHandler) error {
 
 	r.POST("/api/octopusrelease", func(c *gin.Context) {
 
-		err := createReleaseHandler.CreateRelease(&c.Request.Body)
+		applicationUpdateMessage := models.ApplicationUpdateMessage{}
+		err := jsonex.DeserializeJson(c.Request.Body, &applicationUpdateMessage)
+
+		if err != nil {
+			c.JSON(http.StatusOK, models.ErrorResponse{
+				Status:  "Error",
+				Message: err.Error(),
+			})
+			return
+		}
+
+		err = createReleaseHandler.CreateRelease(applicationUpdateMessage)
 
 		if err != nil {
 			c.JSON(http.StatusOK, models.ErrorResponse{

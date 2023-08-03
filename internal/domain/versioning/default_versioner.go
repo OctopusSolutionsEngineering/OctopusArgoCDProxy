@@ -31,7 +31,7 @@ func (o *DefaultVersioner) GenerateReleaseVersion(project models.ArgoCDProject, 
 	}
 
 	// There is an image version we want to use
-	if project.ReleaseVersionImage != "" {
+	if project.ReleaseVersionImage != "" && updateMessage.Images != nil {
 		versions := lo.FilterMap(updateMessage.Images, func(item string, index int) (string, bool) {
 			split := strings.Split(item, ":")
 			if len(split) == 2 && split[0] == project.ReleaseVersionImage {
