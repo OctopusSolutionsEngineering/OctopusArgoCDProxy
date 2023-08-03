@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/OctopusDeploy/go-octopusdeploy/octopusdeploy"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/versioning"
@@ -100,20 +101,26 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.Applicat
 
 func getClient() (*octopusdeploy.Client, error) {
 	if os.Getenv("OCTOPUS_SERVER") == "" {
-		return nil, errors.New("OCTOPUS_SERVER must be defined")
+		return nil, errors.New("octoargosync-init-octoclienterror - OCTOPUS_SERVER must be defined")
 	}
 
 	if os.Getenv("OCTOPUS_API_KEY") == "" {
-		return nil, errors.New("OCTOPUS_API_KEY must be defined")
+		return nil, errors.New("octoargosync-init-octoclienterror - OCTOPUS_API_KEY must be defined")
 	}
 
 	octopusUrl, err := url.Parse(os.Getenv("OCTOPUS_SERVER"))
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("octoargosync-init-octoclienterror - failed to parse OCTOPUS_SERVER as a url: %w", err)
 	}
 
-	return octopusdeploy.NewClient(nil, octopusUrl, os.Getenv("OCTOPUS_API_KEY"), os.Getenv("OCTOPUS_SPACE_ID"))
+	client, err := octopusdeploy.NewClient(nil, octopusUrl, os.Getenv("OCTOPUS_API_KEY"), os.Getenv("OCTOPUS_SPACE_ID"))
+
+	if err != nil {
+		return nil, fmt.Errorf("octoargosync-init-octoclienterror - failed to create the Octopus API client. Check that the OCTOPUS_SERVER, OCTOPUS_API_KEY, and OCTOPUS_SPACE_ID environment variables are valid: %w", err)
+	}
+
+	return client, nil
 }
 
 // getProject scans Octopus for the project that has been linked to the Argo CD Application and namespace
