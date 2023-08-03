@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain"
+	"fmt"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/create_release"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
 	"net/http"
 	"os"
 
@@ -13,12 +14,14 @@ func main() {
 	createReleaseHandler, err := create_release.NewCreateReleaseHandler()
 
 	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}
 
 	err = start(createReleaseHandler)
 
 	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}
 }
@@ -32,7 +35,7 @@ func start(createReleaseHandler *create_release.CreateReleaseHandler) error {
 		err := createReleaseHandler.CreateRelease(&c.Request.Body)
 
 		if err != nil {
-			c.JSON(http.StatusOK, domain.ErrorResponse{
+			c.JSON(http.StatusOK, models.ErrorResponse{
 				Status:  "Error",
 				Message: err.Error(),
 			})

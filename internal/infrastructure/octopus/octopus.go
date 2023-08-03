@@ -1,7 +1,9 @@
 package octopus
 
-import "github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain"
+import (
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
+)
 
 type OctopusClient interface {
-	CreateAndDeployRelease(pdateMessage domain.ApplicationUpdateMessage) error
+	CreateAndDeployRelease(updateMessage models.ApplicationUpdateMessage) error
 }

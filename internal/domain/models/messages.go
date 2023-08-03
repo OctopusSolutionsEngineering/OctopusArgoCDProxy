@@ -1,4 +1,4 @@
-package domain
+package models
 
 type ApplicationUpdateMessage struct {
 	Application    string
@@ -8,6 +8,7 @@ type ApplicationUpdateMessage struct {
 	TargetRevision string
 	CommitSha      string
 	Images         []string
+	Project        string
 }
 
 type ErrorResponse struct {
