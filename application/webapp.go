@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/create_release"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/hanlders"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
 	"net/http"
 	"os"
@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	createReleaseHandler, err := create_release.NewCreateReleaseHandler()
+	createReleaseHandler, err := hanlders.NewCreateReleaseHandler()
 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -26,7 +26,7 @@ func main() {
 	}
 }
 
-func start(createReleaseHandler *create_release.CreateReleaseHandler) error {
+func start(createReleaseHandler *hanlders.CreateReleaseHandler) error {
 	gin.DisableConsoleColor()
 	r := gin.Default()
 

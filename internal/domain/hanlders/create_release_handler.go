@@ -1,4 +1,4 @@
-package create_release
+package hanlders
 
 import (
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/json"
