@@ -53,6 +53,7 @@ func (c CreateReleaseHandler) CreateRelease(applicationUpdateMessage models.Appl
 	if err == nil {
 		applicationUpdateMessage.Images = images
 	} else {
+		applicationUpdateMessage.Images = []string{}
 		c.logger.GetLogger().Error("Failed to get the list of images from Argo CD. " +
 			"The Octopus release version will not use any image version. " + err.Error())
 	}
