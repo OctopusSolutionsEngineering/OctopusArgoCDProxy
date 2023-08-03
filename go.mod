@@ -4,6 +4,7 @@ go 1.20
 
 require (
 	github.com/OctopusDeploy/go-octopusdeploy v1.8.6
+	github.com/allegro/bigcache/v3 v3.1.0
 	github.com/argoproj/argo-cd/v2 v2.7.10
 	github.com/gin-gonic/gin v1.9.1
 	github.com/samber/lo v1.38.1
