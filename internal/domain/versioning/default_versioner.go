@@ -29,7 +29,7 @@ func (o *DefaultVersioner) GenerateReleaseVersion(project models.ArgoCDProject, 
 
 	// the target revision is a useful version
 	if len(Semver.FindStringSubmatch(updateMessage.TargetRevision)) != 0 {
-		return updateMessage.TargetRevision + "-" + timestamp + shaSuffix
+		return updateMessage.TargetRevision + "-" + timestamp
 	}
 
 	// There is an image version we want to use
