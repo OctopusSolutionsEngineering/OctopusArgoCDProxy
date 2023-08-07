@@ -59,7 +59,7 @@ func (c CreateReleaseHandler) CreateRelease(applicationUpdateMessage models.Appl
 	}
 
 	c.logger.GetLogger().Info("Received message from " + applicationUpdateMessage.Application + " in namespace " +
-		applicationUpdateMessage.Namespace + " which includes the images " +
+		applicationUpdateMessage.Namespace + " for sha " + applicationUpdateMessage.CommitSha + " which includes the images " +
 		strings.Join(applicationUpdateMessage.Images, ","))
 
 	err = c.octo.CreateAndDeployRelease(applicationUpdateMessage)

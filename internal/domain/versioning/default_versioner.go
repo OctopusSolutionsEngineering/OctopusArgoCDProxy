@@ -48,7 +48,7 @@ func (o *DefaultVersioner) GenerateReleaseVersion(project models.ArgoCDProject, 
 		}
 	}
 
-	// There is a SHA
+	// There is a SHA, add it
 	if shaSuffix != "" {
 		return timestamp + shaSuffix
 	}
