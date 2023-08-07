@@ -21,7 +21,10 @@ func (o *DefaultVersioner) GenerateReleaseVersion(project models.ArgoCDProject, 
 	sha := ""
 	shaSuffix := ""
 	if updateMessage.CommitSha != "" {
-		sha = strings.TrimSpace(updateMessage.CommitSha[0:12])
+		sha = strings.TrimSpace(updateMessage.CommitSha)
+		if len(sha) > 12 {
+			sha = sha[:11]
+		}
 		shaSuffix = "-" + sha
 	}
 
