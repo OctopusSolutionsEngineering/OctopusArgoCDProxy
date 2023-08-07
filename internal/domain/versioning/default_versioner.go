@@ -18,10 +18,9 @@ type DefaultVersioner struct {
 func (o *DefaultVersioner) GenerateReleaseVersion(project models.ArgoCDProject, updateMessage models.ApplicationUpdateMessage) string {
 	timestamp := time.Now().Format("20060102150405")
 
-	sha := ""
+	sha := strings.TrimSpace(updateMessage.CommitSha)
 	shaSuffix := ""
-	if updateMessage.CommitSha != "" {
-		sha = strings.TrimSpace(updateMessage.CommitSha)
+	if sha != "" {
 		if len(sha) > 12 {
 			sha = sha[:11]
 		}
