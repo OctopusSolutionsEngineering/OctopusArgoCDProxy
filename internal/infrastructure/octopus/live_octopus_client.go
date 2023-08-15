@@ -79,6 +79,12 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.Applicat
 		return err
 	}
 
+	if len(projects) == 0 {
+		o.logger.GetLogger().Info("No projects found configured for " + updateMessage.Application + " in namespace " + updateMessage.Namespace)
+		o.logger.GetLogger().Info("To create releases for this application, add the Metadata.ArgoCD.Application[" +
+			updateMessage.Namespace + "/" + updateMessage.Application + "].Environment variable with a value matching the application's environment name, like \"Development\"")
+	}
+
 	for _, project := range projects {
 
 		defaultChannel, err := o.getDefaultChannel(project.Project)

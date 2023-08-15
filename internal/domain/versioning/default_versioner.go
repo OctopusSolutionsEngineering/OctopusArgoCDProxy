@@ -16,20 +16,22 @@ type DefaultVersioner struct {
 func (o *DefaultVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, project models.ArgoCDProject, updateMessage models.ApplicationUpdateMessage) string {
 	timestamp := time.Now().Format("20060102150405")
 
-	sha := ""
+	sha := strings.TrimSpace(updateMessage.CommitSha)
 	shaSuffix := ""
-	if updateMessage.CommitSha != "" {
-		sha = strings.TrimSpace(updateMessage.CommitSha[0:12])
+	if sha != "" {
+		if len(sha) > 12 {
+			sha = sha[:11]
+		}
 		shaSuffix = "-" + sha
 	}
 
 	// the target revision is a useful version
 	if len(Semver.FindStringSubmatch(updateMessage.TargetRevision)) != 0 {
-		return updateMessage.TargetRevision + "-" + timestamp + shaSuffix
+		return updateMessage.TargetRevision + "-" + timestamp
 	}
 
 	// There is an image version we want to use
-	if project.ReleaseVersionImage != "" {
+	if project.ReleaseVersionImage != "" && updateMessage.Images != nil {
 		versions := lo.FilterMap(updateMessage.Images, func(item string, index int) (string, bool) {
 			split := strings.Split(item, ":")
 			if len(split) == 2 && split[0] == project.ReleaseVersionImage {
@@ -44,7 +46,7 @@ func (o *DefaultVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, pr
 		}
 	}
 
-	// There is a SHA
+	// There is a SHA, add it
 	if shaSuffix != "" {
 		return timestamp + shaSuffix
 	}

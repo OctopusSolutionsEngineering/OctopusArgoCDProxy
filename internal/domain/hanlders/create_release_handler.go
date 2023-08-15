@@ -1,7 +1,6 @@
 package hanlders
 
 import (
-	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/json"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/versioning"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/argocd"
@@ -9,13 +8,11 @@ import (
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/octopus"
 	"github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
 	"github.com/samber/lo"
-	"io"
 	"strings"
 )
 
 type CreateReleaseHandler struct {
 	logger    logging.AppLogger
-	extractor *json.BodyExtractor
 	octo      octopus.OctopusClient
 	argo      *argocd.Client
 	versioner octopus.ReleaseVersioner
@@ -42,36 +39,28 @@ func NewCreateReleaseHandler() (*CreateReleaseHandler, error) {
 
 	return &CreateReleaseHandler{
 		logger:    logger,
-		extractor: &json.BodyExtractor{},
 		octo:      octo,
 		argo:      argocdClient,
 		versioner: &versioning.DefaultVersioner{},
 	}, nil
 }
 
-func (c CreateReleaseHandler) CreateRelease(reader *io.ReadCloser) error {
-	applicationUpdateMessage := models.ApplicationUpdateMessage{}
-	err := c.extractor.DeserializeJson(*reader, &applicationUpdateMessage)
+func (c CreateReleaseHandler) CreateRelease(applicationUpdateMessage models.ApplicationUpdateMessage) error {
 
-	if err != nil {
-		return err
+	images, err := c.getImages(applicationUpdateMessage)
+
+	// We can gracefully fall back if the connection back to argo failed
+	if err == nil {
+		applicationUpdateMessage.Images = images
+	} else {
+		applicationUpdateMessage.Images = []string{}
+		c.logger.GetLogger().Error("Failed to get the list of images from Argo CD. " +
+			"The Octopus release version will not use any image version. " + err.Error())
 	}
-
-	tree, err := c.argo.GetApplicationResourceTree(applicationUpdateMessage.Application, applicationUpdateMessage.Namespace)
-
-	if err != nil {
-		return err
-	}
-
-	images := lo.FlatMap(tree.Nodes, func(item v1alpha1.ResourceNode, index int) []string {
-		return item.Images
-	})
-
-	applicationUpdateMessage.Images = lo.Uniq(images)
 
 	c.logger.GetLogger().Info("Received message from " + applicationUpdateMessage.Application + " in namespace " +
-		applicationUpdateMessage.Namespace + " which includes the images " +
-		strings.Join(applicationUpdateMessage.Images, ","))
+		applicationUpdateMessage.Namespace + " for SHA " + applicationUpdateMessage.CommitSha + " and release version " +
+		applicationUpdateMessage.TargetRevision + " which includes the images " + strings.Join(applicationUpdateMessage.Images, ","))
 
 	err = c.octo.CreateAndDeployRelease(applicationUpdateMessage)
 
@@ -80,4 +69,18 @@ func (c CreateReleaseHandler) CreateRelease(reader *io.ReadCloser) error {
 	}
 
 	return nil
+}
+
+func (c CreateReleaseHandler) getImages(applicationUpdateMessage models.ApplicationUpdateMessage) ([]string, error) {
+	tree, err := c.argo.GetApplicationResourceTree(applicationUpdateMessage.Application, applicationUpdateMessage.Namespace)
+
+	if err != nil {
+		return nil, err
+	}
+
+	images := lo.FlatMap(tree.Nodes, func(item v1alpha1.ResourceNode, index int) []string {
+		return item.Images
+	})
+
+	return lo.Uniq(images), nil
 }
