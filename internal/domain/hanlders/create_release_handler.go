@@ -25,7 +25,7 @@ func NewCreateReleaseHandler() (*CreateReleaseHandler, error) {
 		return nil, err
 	}
 
-	octo, err := octopus.NewLiveOctopusClient(&versioning.SimpleVersioner{})
+	octo, err := octopus.NewLiveOctopusClient(&versioning.SimpleRedeploymentVersioner{})
 
 	if err != nil {
 		return nil, err
