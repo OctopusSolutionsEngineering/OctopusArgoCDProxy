@@ -5,6 +5,7 @@ import (
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/octopus"
 	"github.com/samber/lo"
+	"k8s.io/utils/strings/slices"
 	"strings"
 	"time"
 )
@@ -26,15 +27,20 @@ func (o *SimpleVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, pro
 
 	// the target revision is a useful version
 	if len(Semver.FindStringSubmatch(updateMessage.TargetRevision)) != 0 {
-		existingVersions := lo.Filter(releases, func(item string, index int) bool {
-			return item == updateMessage.TargetRevision
-		})
+		version := updateMessage.TargetRevision
 
-		if len(existingVersions) == 0 {
+		if slices.Index(releases, version) == -1 {
 			return updateMessage.TargetRevision
 		}
 
-		return updateMessage.TargetRevision + "+deployment" + fmt.Sprint(len(existingVersions)+1)
+		for count := 2; count < 1000; count++ {
+			thisVersion := version + "+deployment" + fmt.Sprint(count)
+			if slices.Index(releases, thisVersion) == -1 {
+				return thisVersion
+			}
+		}
+
+		return time.Now().Format("20060102150405")
 	}
 
 	// There is an image version we want to use
@@ -49,15 +55,21 @@ func (o *SimpleVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, pro
 		})
 
 		if len(versions) != 0 {
-			existingVersions := lo.Filter(releases, func(item string, index int) bool {
-				return item == versions[0]
-			})
 
-			if len(existingVersions) == 0 {
-				return versions[0]
+			version := versions[0]
+
+			if slices.Index(releases, version) == -1 {
+				return updateMessage.TargetRevision
 			}
 
-			return versions[0] + "+deployment" + fmt.Sprint(len(existingVersions)+1)
+			for count := 2; count < 1000; count++ {
+				thisVersion := version + "+deployment" + fmt.Sprint(count)
+				if slices.Index(releases, thisVersion) == -1 {
+					return thisVersion
+				}
+			}
+
+			return time.Now().Format("20060102150405")
 		}
 	}
 
