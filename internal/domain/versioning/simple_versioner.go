@@ -2,10 +2,12 @@ package versioning
 
 import (
 	"fmt"
+	"github.com/Masterminds/semver/v3"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/octopus"
 	"github.com/samber/lo"
 	"k8s.io/utils/strings/slices"
+	"sort"
 	"strings"
 	"time"
 )
@@ -62,6 +64,21 @@ func (o *SimpleVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, pro
 			}
 
 			return "", false
+		})
+
+		sort.SliceStable(versions, func(a, b int) bool {
+			v1, err1 := semver.NewVersion(versions[a])
+			v2, err2 := semver.NewVersion(versions[b])
+
+			if err1 == nil && err2 == nil {
+				return v1.Compare(v2) < 0
+			}
+
+			if err1 == nil {
+				return false
+			}
+
+			return versions[a] < versions[b]
 		})
 
 		if len(versions) != 0 {
