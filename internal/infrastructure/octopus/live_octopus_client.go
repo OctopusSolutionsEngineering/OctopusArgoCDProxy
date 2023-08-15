@@ -53,6 +53,52 @@ func NewLiveOctopusClient(versioner ReleaseVersioner) (*LiveOctopusClient, error
 	}, nil
 }
 
+func (o *LiveOctopusClient) IsDeployed(projectId string, releaseVersion string, environmentName string) (bool, error) {
+	releases, err := o.client.Releases.Get(octopusdeploy.ReleasesQuery{
+		IDs:                nil,
+		IgnoreChannelRules: false,
+		Skip:               0,
+		Take:               10000,
+	})
+
+	if err != nil {
+		return false, err
+	}
+
+	projectReleases := lo.Filter(releases.Items, func(item *octopusdeploy.Release, index int) bool {
+		return item.ProjectID == projectId && item.Version == releaseVersion
+	})
+
+	if len(projectReleases) == 0 {
+		return false, nil
+	}
+
+	deployments, err := o.client.Deployments.GetDeployments(projectReleases[0], &octopusdeploy.DeploymentQuery{
+		Skip: 0,
+		Take: 10000,
+	})
+
+	if err != nil {
+		return false, err
+	}
+
+	if len(deployments.Items) == 0 {
+		return false, nil
+	}
+
+	environmentId, err := o.getEnvironmentId(environmentName)
+
+	if err != nil {
+		return false, err
+	}
+
+	environmentDeployments := lo.Filter(deployments.Items, func(item *octopusdeploy.Deployment, index int) bool {
+		return item.EnvironmentID == environmentId
+	})
+
+	return len(environmentDeployments) != 0, nil
+}
+
 func (o *LiveOctopusClient) GetReleaseVersions(projectId string) ([]string, error) {
 	releases, err := o.client.Releases.Get(octopusdeploy.ReleasesQuery{
 		IDs:                nil,
@@ -93,10 +139,13 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.Applicat
 			return err
 		}
 
-		version := o.versioner.GenerateReleaseVersion(o, project, updateMessage)
+		version, err := o.versioner.GenerateReleaseVersion(o, project, updateMessage)
 
-		release := octopusdeploy.NewRelease(defaultChannel.ID, project.Project.ID, version)
-		release, err = o.client.Releases.Add(release)
+		if err != nil {
+			return err
+		}
+
+		release, err := o.getRelease(project, version, defaultChannel.ID)
 
 		if err != nil {
 			return err
@@ -145,6 +194,32 @@ func getClient() (*octopusdeploy.Client, error) {
 	}
 
 	return client, nil
+}
+
+// getProject scans Octopus for the project that has been linked to the Argo CD Application and namespace
+func (o *LiveOctopusClient) getRelease(project models.ArgoCDProject, version string, channelId string) (*octopusdeploy.Release, error) {
+
+	releases, err := o.client.Releases.Get(octopusdeploy.ReleasesQuery{
+		IDs:                nil,
+		IgnoreChannelRules: false,
+		Skip:               0,
+		Take:               10000,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	existingReleases := lo.Filter(releases.Items, func(item *octopusdeploy.Release, index int) bool {
+		return item.ProjectID == project.Project.ID && item.Version == version
+	})
+
+	if len(existingReleases) == 0 {
+		release := octopusdeploy.NewRelease(channelId, project.Project.ID, version)
+		return o.client.Releases.Add(release)
+	} else {
+		return existingReleases[0], nil
+	}
 }
 
 // getProject scans Octopus for the project that has been linked to the Argo CD Application and namespace

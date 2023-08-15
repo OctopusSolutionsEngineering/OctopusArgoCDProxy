@@ -15,32 +15,42 @@ type SimpleVersioner struct {
 
 // GenerateReleaseVersion will use the target revision, then a matching image version, then a git sha. It uses semver metadata
 // to ensure release versions are unique.
-func (o *SimpleVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, project models.ArgoCDProject, updateMessage models.ApplicationUpdateMessage) string {
+func (o *SimpleVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, project models.ArgoCDProject, updateMessage models.ApplicationUpdateMessage) (string, error) {
 
 	fallbackVersion := time.Now().Format("2006.01.02.150405")
 
 	releases, err := octo.GetReleaseVersions(project.Project.ID)
 
 	if err != nil {
-		return fallbackVersion
+		return "", err
 	}
 
 	// the target revision is a useful version
 	if len(Semver.FindStringSubmatch(updateMessage.TargetRevision)) != 0 {
 		version := updateMessage.TargetRevision
 
+		isDeployed, err := octo.IsDeployed(project.Project.ID, version, project.Environment)
+
+		if err != nil {
+			return "", err
+		}
+
+		if !isDeployed {
+			return version, nil
+		}
+
 		if slices.Index(releases, version) == -1 {
-			return updateMessage.TargetRevision
+			return updateMessage.TargetRevision, nil
 		}
 
 		for count := 2; count < 1000; count++ {
 			thisVersion := version + "+deployment" + fmt.Sprint(count)
 			if slices.Index(releases, thisVersion) == -1 {
-				return thisVersion
+				return thisVersion, nil
 			}
 		}
 
-		return time.Now().Format("20060102150405")
+		return time.Now().Format("20060102150405"), nil
 	}
 
 	// There is an image version we want to use
@@ -58,21 +68,27 @@ func (o *SimpleVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, pro
 
 			version := versions[0]
 
-			if slices.Index(releases, version) == -1 {
-				return updateMessage.TargetRevision
+			isDeployed, err := octo.IsDeployed(project.Project.ID, version, project.Environment)
+
+			if err != nil {
+				return "", err
+			}
+
+			if !isDeployed {
+				return version, nil
 			}
 
 			for count := 2; count < 1000; count++ {
 				thisVersion := version + "+deployment" + fmt.Sprint(count)
 				if slices.Index(releases, thisVersion) == -1 {
-					return thisVersion
+					return thisVersion, nil
 				}
 			}
 
-			return time.Now().Format("20060102150405")
+			return time.Now().Format("20060102150405"), nil
 		}
 	}
 
 	// if all else fails, use a date ver
-	return fallbackVersion
+	return fallbackVersion, nil
 }

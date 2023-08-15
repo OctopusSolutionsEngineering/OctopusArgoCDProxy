@@ -6,5 +6,5 @@ import (
 
 // ReleaseVersioner defines the functions required to create an Octoipus release version
 type ReleaseVersioner interface {
-	GenerateReleaseVersion(octo OctopusClient, project models.ArgoCDProject, updateMessage models.ApplicationUpdateMessage) string
+	GenerateReleaseVersion(octo OctopusClient, project models.ArgoCDProject, updateMessage models.ApplicationUpdateMessage) (string, error)
 }
