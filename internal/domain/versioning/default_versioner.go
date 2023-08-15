@@ -2,20 +2,18 @@ package versioning
 
 import (
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/octopus"
 	"github.com/samber/lo"
-	"regexp"
 	"strings"
 	"time"
 )
-
-var Semver = regexp.MustCompile("^(?P<major>0|[1-9]\\d*)\\.(?P<minor>0|[1-9]\\d*)\\.(?P<patch>0|[1-9]\\d*)(?:-(?P<prerelease>(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$")
 
 type DefaultVersioner struct {
 }
 
 // GenerateReleaseVersion will use the target revision, then a matching image version, then a git sha, then just a timestamp
 // to generate the release version.
-func (o *DefaultVersioner) GenerateReleaseVersion(project models.ArgoCDProject, updateMessage models.ApplicationUpdateMessage) string {
+func (o *DefaultVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, project models.ArgoCDProject, updateMessage models.ApplicationUpdateMessage) string {
 	timestamp := time.Now().Format("20060102150405")
 
 	sha := ""

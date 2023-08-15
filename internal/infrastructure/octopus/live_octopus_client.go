@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/OctopusDeploy/go-octopusdeploy/octopusdeploy"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
-	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/versioning"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/logging"
 	"github.com/allegro/bigcache/v3"
 	"github.com/samber/lo"
@@ -27,11 +26,11 @@ var ApplicationImageVersionVariable = regexp.MustCompile("^Metadata.ArgoCD\\.App
 type LiveOctopusClient struct {
 	client    *octopusdeploy.Client
 	logger    logging.AppLogger
-	versioner versioning.ReleaseVersioner
+	versioner ReleaseVersioner
 	bigCache  *bigcache.BigCache
 }
 
-func NewLiveOctopusClient(versioner versioning.ReleaseVersioner) (*LiveOctopusClient, error) {
+func NewLiveOctopusClient(versioner ReleaseVersioner) (*LiveOctopusClient, error) {
 	client, err := getClient()
 
 	if err != nil {
@@ -54,6 +53,25 @@ func NewLiveOctopusClient(versioner versioning.ReleaseVersioner) (*LiveOctopusCl
 	}, nil
 }
 
+func (o *LiveOctopusClient) GetReleaseVersions(projectId string) ([]string, error) {
+	releases, err := o.client.Releases.Get(octopusdeploy.ReleasesQuery{
+		IDs:                nil,
+		IgnoreChannelRules: false,
+		Skip:               0,
+		Take:               1000,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	projectReleases := lo.FilterMap(releases.Items, func(item *octopusdeploy.Release, index int) (string, bool) {
+		return item.Version, item.ProjectID == projectId
+	})
+
+	return projectReleases, nil
+}
+
 func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.ApplicationUpdateMessage) error {
 	projects, err := o.getProject(updateMessage.Application, updateMessage.Namespace)
 
@@ -69,7 +87,7 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.Applicat
 			return err
 		}
 
-		version := o.versioner.GenerateReleaseVersion(project, updateMessage)
+		version := o.versioner.GenerateReleaseVersion(o, project, updateMessage)
 
 		release := octopusdeploy.NewRelease(defaultChannel.ID, project.Project.ID, version)
 		release, err = o.client.Releases.Add(release)

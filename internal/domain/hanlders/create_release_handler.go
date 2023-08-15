@@ -18,7 +18,7 @@ type CreateReleaseHandler struct {
 	extractor *json.BodyExtractor
 	octo      octopus.OctopusClient
 	argo      *argocd.Client
-	versioner versioning.ReleaseVersioner
+	versioner octopus.ReleaseVersioner
 }
 
 func NewCreateReleaseHandler() (*CreateReleaseHandler, error) {
@@ -28,7 +28,7 @@ func NewCreateReleaseHandler() (*CreateReleaseHandler, error) {
 		return nil, err
 	}
 
-	octo, err := octopus.NewLiveOctopusClient(&versioning.DefaultVersioner{})
+	octo, err := octopus.NewLiveOctopusClient(&versioning.SimpleVersioner{})
 
 	if err != nil {
 		return nil, err

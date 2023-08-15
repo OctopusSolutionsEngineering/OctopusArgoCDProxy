@@ -6,4 +6,5 @@ import (
 
 type OctopusClient interface {
 	CreateAndDeployRelease(updateMessage models.ApplicationUpdateMessage) error
+	GetReleaseVersions(projectId string) ([]string, error)
 }

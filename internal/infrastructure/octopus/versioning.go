@@ -1,4 +1,4 @@
-package versioning
+package octopus
 
 import (
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
@@ -6,5 +6,5 @@ import (
 
 // ReleaseVersioner defines the functions required to create an Octoipus release version
 type ReleaseVersioner interface {
-	GenerateReleaseVersion(project models.ArgoCDProject, updateMessage models.ApplicationUpdateMessage) string
+	GenerateReleaseVersion(octo OctopusClient, project models.ArgoCDProject, updateMessage models.ApplicationUpdateMessage) string
 }
