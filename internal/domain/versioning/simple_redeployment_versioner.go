@@ -41,14 +41,14 @@ func (o *SimpleRedeploymentVersioner) GenerateReleaseVersion(octo octopus.Octopu
 			v2, err2 := semver.NewVersion(versions[b])
 
 			if err1 == nil && err2 == nil {
-				return v1.Compare(v2) < 0
+				return v1.Compare(v2) > 0
 			}
 
 			if err1 == nil {
-				return false
+				return true
 			}
 
-			return versions[a] < versions[b]
+			return versions[a] > versions[b]
 		})
 
 		if len(versions) != 0 {
