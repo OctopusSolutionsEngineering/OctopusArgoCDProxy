@@ -196,7 +196,7 @@ func getClient() (*octopusdeploy.Client, error) {
 	return client, nil
 }
 
-// getProject scans Octopus for the project that has been linked to the Argo CD Application and namespace
+// getRelease finds the release for a given version in a project, or it creates a new release.
 func (o *LiveOctopusClient) getRelease(project models.ArgoCDProject, version string, channelId string) (*octopusdeploy.Release, error) {
 
 	releases, err := o.client.Releases.Get(octopusdeploy.ReleasesQuery{
