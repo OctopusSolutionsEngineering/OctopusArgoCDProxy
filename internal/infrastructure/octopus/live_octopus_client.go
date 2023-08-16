@@ -21,7 +21,8 @@ import (
 const MaxInt = 2147483647
 
 var ApplicationEnvironmentVariable = regexp.MustCompile("^Metadata.ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.Environment$")
-var ApplicationImageVersionVariable = regexp.MustCompile("^Metadata.ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.ImageForReleaseVersion$")
+var ApplicationImageReleaseVersionVariable = regexp.MustCompile("^Metadata.ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.ImageForReleaseVersion$")
+var ApplicationImagePackageVersionVariable = regexp.MustCompile("^Metadata.ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.ImageForPackageVersion\\[([^\\[\\]]*?)]$")
 
 // LiveOctopusClient interacts with a live Octopus API endpoint, and implements caching to reduce network calls.
 type LiveOctopusClient struct {
@@ -166,7 +167,7 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.Applicat
 			return err
 		}
 
-		release, newRelease, err := o.getRelease(project, version, defaultChannel.ID)
+		release, newRelease, err := o.getRelease(project, version, defaultChannel.ID, updateMessage)
 
 		if err != nil {
 			return err
@@ -243,8 +244,53 @@ func (o *LiveOctopusClient) validateLifecycle(lifecycle *octopusdeploy.Lifecycle
 	return nil
 }
 
+// getPackages extracts packages and the images that the package versions are selected from
+func (o *LiveOctopusClient) getPackages(project models.ArgoCDProject, updateMessage models.ApplicationUpdateMessage) ([]*octopusdeploy.SelectedPackage, error) {
+	selectedPackages := []*octopusdeploy.SelectedPackage{}
+
+	for _, imagePackageVersion := range project.PackageVersions {
+
+		imageVersion := lo.FilterMap(updateMessage.Images, func(item string, index int) (string, bool) {
+			split := strings.Split(item, ":")
+
+			if len(split) != 2 {
+				return "", false
+			}
+
+			return split[1], split[0] == imagePackageVersion.Image
+		})
+
+		if len(imageVersion) == 0 {
+			o.logger.GetLogger().Error("The ArgoCD deployment does not contain an image called " + imagePackageVersion.Image + " so the default package version will be used.")
+			continue
+		}
+
+		split := strings.Split(imagePackageVersion.PackageReference, ":")
+
+		if len(split) == 1 {
+			selectedPackages = append(selectedPackages, &octopusdeploy.SelectedPackage{
+				ActionName:           split[0],
+				PackageReferenceName: "",
+				StepName:             "",
+				Version:              imageVersion[0],
+			})
+		} else if len(split) == 2 {
+			selectedPackages = append(selectedPackages, &octopusdeploy.SelectedPackage{
+				ActionName:           split[0],
+				PackageReferenceName: split[1],
+				StepName:             "",
+				Version:              imageVersion[0],
+			})
+		} else {
+			o.logger.GetLogger().Error("The step package reference " + imagePackageVersion.PackageReference + " was in an unexpected format. It must be a string separated by 0 or 1 colons e.g. stepname, stepname:packagename")
+		}
+	}
+
+	return selectedPackages, nil
+}
+
 // getRelease finds the release for a given version in a project, or it creates a new release.
-func (o *LiveOctopusClient) getRelease(project models.ArgoCDProject, version string, channelId string) (*octopusdeploy.Release, bool, error) {
+func (o *LiveOctopusClient) getRelease(project models.ArgoCDProject, version string, channelId string, updateMessage models.ApplicationUpdateMessage) (*octopusdeploy.Release, bool, error) {
 
 	releases, err := o.client.Releases.Get(octopusdeploy.ReleasesQuery{
 		IDs:                nil,
@@ -261,8 +307,20 @@ func (o *LiveOctopusClient) getRelease(project models.ArgoCDProject, version str
 		return item.ProjectID == project.Project.ID && item.Version == version
 	})
 
+	packages, err := o.getPackages(project, updateMessage)
+
+	if err != nil {
+		return nil, false, err
+	}
+
 	if len(existingReleases) == 0 {
-		release := octopusdeploy.NewRelease(channelId, project.Project.ID, version)
+		release := &octopusdeploy.Release{
+			ChannelID:        channelId,
+			ProjectID:        project.Project.ID,
+			Version:          version,
+			SelectedPackages: packages,
+		}
+
 		release, err := o.client.Releases.Add(release)
 		return release, true, err
 	} else {
@@ -297,13 +355,26 @@ func (o *LiveOctopusClient) getProject(application string, namespace string) ([]
 		})
 
 		releaseVersionImages := lo.FilterMap(variables.Variables, func(variable *octopusdeploy.Variable, index int) (string, bool) {
-			match := ApplicationImageVersionVariable.FindStringSubmatch(variable.Name)
+			match := ApplicationImageReleaseVersionVariable.FindStringSubmatch(variable.Name)
 
 			if len(match) != 2 || match[1] != namespace+"/"+application {
 				return "", false
 			}
 
 			return variable.Value, true
+		})
+
+		packageVersionImages := lo.FilterMap(variables.Variables, func(variable *octopusdeploy.Variable, index int) (models.ImagePackageVersion, bool) {
+			match := ApplicationImagePackageVersionVariable.FindStringSubmatch(variable.Name)
+
+			if len(match) != 3 || match[1] != namespace+"/"+application {
+				return models.ImagePackageVersion{}, false
+			}
+
+			return models.ImagePackageVersion{
+				Image:            match[2],
+				PackageReference: variable.Value,
+			}, true
 		})
 
 		releaseVersionImage := ""
@@ -316,6 +387,7 @@ func (o *LiveOctopusClient) getProject(application string, namespace string) ([]
 				Project:             project,
 				Environment:         appNameEnvironments[0],
 				ReleaseVersionImage: releaseVersionImage,
+				PackageVersions:     packageVersionImages,
 			}, true
 		}
 
