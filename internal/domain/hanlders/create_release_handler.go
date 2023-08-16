@@ -55,6 +55,7 @@ func (c CreateReleaseHandler) CreateRelease(applicationUpdateMessage models.Appl
 	} else {
 		applicationUpdateMessage.Images = []string{}
 		c.logger.GetLogger().Error("Failed to get the list of images from Argo CD. " +
+			"Verify the ARGOCD_SERVER and ARGOCD_TOKEN environment variables are valid. " +
 			"The Octopus release version will not use any image version. " + err.Error())
 	}
 

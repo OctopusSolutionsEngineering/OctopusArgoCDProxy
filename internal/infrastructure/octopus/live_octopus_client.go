@@ -154,7 +154,9 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.Applicat
 		environmentId, err := o.getEnvironmentId(project.Environment)
 
 		if err != nil {
-			return err
+			return errors.New("failed to find an environment called " + project.Environment +
+				" - ensure the variable Metadata.ArgoCD.Application[" +
+				updateMessage.Namespace + "/" + updateMessage.Application + "].Environment is set to a valid environment name")
 		}
 
 		deployment := octopusdeploy.NewDeployment(environmentId, release.ID)
