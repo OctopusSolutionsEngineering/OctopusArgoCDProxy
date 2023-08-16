@@ -10,6 +10,7 @@ import (
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/logging"
 	"github.com/allegro/bigcache/v3"
 	"github.com/samber/lo"
+	"golang.org/x/exp/slices"
 	"net/url"
 	"os"
 	"regexp"
@@ -139,24 +140,42 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.Applicat
 			return err
 		}
 
-		version, err := o.versioner.GenerateReleaseVersion(o, project, updateMessage)
-
-		if err != nil {
-			return err
-		}
-
-		release, err := o.getRelease(project, version, defaultChannel.ID)
-
-		if err != nil {
-			return err
-		}
-
 		environmentId, err := o.getEnvironmentId(project.Environment)
 
 		if err != nil {
 			return errors.New("failed to find an environment called " + project.Environment +
 				" - ensure the variable Metadata.ArgoCD.Application[" +
 				updateMessage.Namespace + "/" + updateMessage.Application + "].Environment is set to a valid environment name")
+		}
+
+		lifecycle, err := o.getLifecycle(defaultChannel.LifecycleID)
+
+		if err != nil {
+			return err
+		}
+
+		err = o.validateLifecycle(lifecycle, environmentId)
+
+		if err != nil {
+			return err
+		}
+
+		version, err := o.versioner.GenerateReleaseVersion(o, project, updateMessage)
+
+		if err != nil {
+			return err
+		}
+
+		release, newRelease, err := o.getRelease(project, version, defaultChannel.ID)
+
+		if err != nil {
+			return err
+		}
+
+		if newRelease && slices.Index(lifecycle.Phases[0].AutomaticDeploymentTargets, environmentId) != -1 {
+			o.logger.GetLogger().Info("Created release " + release.ID + " with version " + version + " for project " + project.Project.Name)
+			o.logger.GetLogger().Info("The environment " + project.Environment + " is an automatic deployment target in the first phase, so Octopus will automatically deploy the release")
+			return nil
 		}
 
 		deployment := octopusdeploy.NewDeployment(environmentId, release.ID)
@@ -198,8 +217,34 @@ func getClient() (*octopusdeploy.Client, error) {
 	return client, nil
 }
 
+// validateLifecycle checks for some common misconfigurations and either throws an error or prints a warning
+func (o *LiveOctopusClient) validateLifecycle(lifecycle *octopusdeploy.Lifecycle, environmentId string) error {
+	if len(lifecycle.Phases) == 0 {
+		return errors.New("the lifecycle " + lifecycle.Name + " has no phases, so deployment will fail")
+	}
+
+	allEnvironments := lo.FlatMap(lifecycle.Phases, func(item octopusdeploy.Phase, index int) []string {
+		environments := []string{}
+		environments = append(environments, item.AutomaticDeploymentTargets...)
+		environments = append(environments, item.OptionalDeploymentTargets...)
+		return environments
+	})
+
+	if slices.Index(allEnvironments, environmentId) == -1 {
+		return errors.New("the lifecycle " + lifecycle.Name + " does not include the environment " + environmentId)
+	}
+
+	if slices.Index(lifecycle.Phases[0].AutomaticDeploymentTargets, environmentId) == -1 &&
+		slices.Index(lifecycle.Phases[0].OptionalDeploymentTargets, environmentId) == -1 {
+		o.logger.GetLogger().Warn("It is recommended that the lifecycle associated with the project includes all ArgoCD environments in the first phase +" +
+			"because ArgoCD does not enforce any environment progression rules and deployments can happen to any environment in any order.")
+	}
+
+	return nil
+}
+
 // getRelease finds the release for a given version in a project, or it creates a new release.
-func (o *LiveOctopusClient) getRelease(project models.ArgoCDProject, version string, channelId string) (*octopusdeploy.Release, error) {
+func (o *LiveOctopusClient) getRelease(project models.ArgoCDProject, version string, channelId string) (*octopusdeploy.Release, bool, error) {
 
 	releases, err := o.client.Releases.Get(octopusdeploy.ReleasesQuery{
 		IDs:                nil,
@@ -209,7 +254,7 @@ func (o *LiveOctopusClient) getRelease(project models.ArgoCDProject, version str
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	existingReleases := lo.Filter(releases.Items, func(item *octopusdeploy.Release, index int) bool {
@@ -218,9 +263,10 @@ func (o *LiveOctopusClient) getRelease(project models.ArgoCDProject, version str
 
 	if len(existingReleases) == 0 {
 		release := octopusdeploy.NewRelease(channelId, project.Project.ID, version)
-		return o.client.Releases.Add(release)
+		release, err := o.client.Releases.Add(release)
+		return release, true, err
 	} else {
-		return existingReleases[0], nil
+		return existingReleases[0], false, nil
 	}
 }
 
@@ -303,7 +349,11 @@ func (o *LiveOctopusClient) getProjectVariables(projectId string) (*octopusdeplo
 			return nil, err
 		}
 
-		o.bigCache.Set(projectId+"-Variables", variablesData)
+		err = o.bigCache.Set(projectId+"-Variables", variablesData)
+
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return variables, nil
@@ -332,10 +382,59 @@ func (o *LiveOctopusClient) getAllProject() (*octopusdeploy.Projects, error) {
 			return nil, err
 		}
 
-		o.bigCache.Set("AllProjects", projectsData)
+		err = o.bigCache.Set("AllProjects", projectsData)
+
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return projects, nil
+}
+
+func (o *LiveOctopusClient) getLifecycle(lifecycleId string) (*octopusdeploy.Lifecycle, error) {
+	lifecycle := &octopusdeploy.Lifecycle{}
+	lifecycleData, err := o.bigCache.Get(lifecycleId)
+
+	if err == nil {
+		err = json.Unmarshal(lifecycleData, lifecycle)
+
+		if err != nil {
+			return nil, err
+		}
+	} else {
+
+		lifecycleQuery := octopusdeploy.LifecyclesQuery{
+			IDs:         []string{lifecycleId},
+			PartialName: "",
+			Skip:        0,
+			Take:        1,
+		}
+
+		lifecycles, err := o.client.Lifecycles.Get(lifecycleQuery)
+
+		if err != nil {
+			return nil, nil
+		}
+
+		if len(lifecycles.Items) != 1 {
+			return nil, errors.New("failed to find lifecycle with ID " + lifecycleId)
+		}
+
+		lifecyclesData, err := json.Marshal(lifecycles)
+
+		if err != nil {
+			return nil, err
+		}
+
+		err = o.bigCache.Set(lifecycleId, lifecyclesData)
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return lifecycle, nil
 }
 
 func (o *LiveOctopusClient) getDefaultChannel(project *octopusdeploy.Project) (*octopusdeploy.Channel, error) {
@@ -377,7 +476,11 @@ func (o *LiveOctopusClient) getDefaultChannel(project *octopusdeploy.Project) (*
 			return nil, err
 		}
 
-		o.bigCache.Set(project.ID+"-DefaultChannel", channelData)
+		err = o.bigCache.Set(project.ID+"-DefaultChannel", channelData)
+
+		if err != nil {
+			return nil, err
+		}
 
 		return defaultChannel[0], nil
 	}
@@ -424,7 +527,11 @@ func (o *LiveOctopusClient) getEnvironmentId(environmentName string) (string, er
 			return "", err
 		}
 
-		o.bigCache.Set("Environments-"+environmentName, environmentData)
+		err = o.bigCache.Set("Environments-"+environmentName, environmentData)
+
+		if err != nil {
+			return "", err
+		}
 
 		return filteredEnvironments[0].ID, nil
 	}
