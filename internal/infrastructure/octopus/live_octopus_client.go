@@ -426,6 +426,14 @@ func (o *LiveOctopusClient) getRelease(project models.ArgoCDProject, version str
 
 // overridePackageSelections returns package selections with overrides applied to them
 func (o *LiveOctopusClient) overridePackageSelections(defaultPackages []*octopusdeploy.SelectedPackage, packages []*octopusdeploy.SelectedPackage) []*octopusdeploy.SelectedPackage {
+	if defaultPackages == nil {
+		defaultPackages = []*octopusdeploy.SelectedPackage{}
+	}
+
+	if packages == nil {
+		packages = []*octopusdeploy.SelectedPackage{}
+	}
+
 	return lo.Map(defaultPackages, func(item *octopusdeploy.SelectedPackage, index int) *octopusdeploy.SelectedPackage {
 		override, found := lo.Find(packages, func(overridePackage *octopusdeploy.SelectedPackage) bool {
 			return overridePackage.ActionName == item.ActionName &&
@@ -787,6 +795,18 @@ func (o *LiveOctopusClient) getEnvironmentId(environmentName string) (string, er
 
 // buildPackageVersionBaseline has been shamelessly lifted from https://github.com/OctopusDeploy/cli
 func (o *LiveOctopusClient) buildPackageVersionBaseline(octopus *octopusApiClient.Client, deploymentProcessTemplate *deployments.DeploymentProcessTemplate, channel *channels.Channel) ([]*octopusdeploy.SelectedPackage, error) {
+	if octopus == nil {
+		return nil, errors.New("octopus can not be nil")
+	}
+
+	if deploymentProcessTemplate == nil {
+		return nil, errors.New("deploymentProcessTemplate can not be nil")
+	}
+
+	if channel == nil {
+		return nil, errors.New("channel can not be nil")
+	}
+
 	result := make([]*octopusdeploy.SelectedPackage, 0, len(deploymentProcessTemplate.Packages))
 
 	// step 1: pass over all the packages in the deployment process, group them
