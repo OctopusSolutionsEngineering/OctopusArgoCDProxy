@@ -14,6 +14,7 @@ import (
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/logging"
 	"github.com/allegro/bigcache/v3"
+	"github.com/avast/retry-go"
 	"github.com/hashicorp/go-multierror"
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
@@ -26,6 +27,8 @@ import (
 )
 
 const MaxInt = 2147483647
+
+var RetryOptions = retry.MaxDelay(3 * time.Second)
 
 var ApplicationEnvironmentVariable = regexp.MustCompile("^Metadata.ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.Environment$")
 var ApplicationChannelVariable = regexp.MustCompile("^Metadata.ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.Channel$")
@@ -64,18 +67,25 @@ func NewLiveOctopusClient(versioner ReleaseVersioner) (*LiveOctopusClient, error
 }
 
 func (o *LiveOctopusClient) IsDeployed(projectId string, releaseVersion string, environmentName string) (bool, error) {
-	releases, err := o.client.Releases.Get(octopusdeploy.ReleasesQuery{
-		IDs:                nil,
-		IgnoreChannelRules: false,
-		Skip:               0,
-		Take:               10000,
-	})
+	var octopusReleases *octopusdeploy.Releases
+	err := retry.Do(
+		func() error {
+			var err error
+			octopusReleases, err = o.client.Releases.Get(octopusdeploy.ReleasesQuery{
+				IDs:                nil,
+				IgnoreChannelRules: false,
+				Skip:               0,
+				Take:               10000,
+			})
+
+			return err
+		}, RetryOptions)
 
 	if err != nil {
 		return false, err
 	}
 
-	projectReleases := lo.Filter(releases.Items, func(item *octopusdeploy.Release, index int) bool {
+	projectReleases := lo.Filter(octopusReleases.Items, func(item *octopusdeploy.Release, index int) bool {
 		return item.ProjectID == projectId && item.Version == releaseVersion
 	})
 
@@ -83,16 +93,22 @@ func (o *LiveOctopusClient) IsDeployed(projectId string, releaseVersion string, 
 		return false, nil
 	}
 
-	deployments, err := o.client.Deployments.GetDeployments(projectReleases[0], &octopusdeploy.DeploymentQuery{
-		Skip: 0,
-		Take: 10000,
-	})
+	var octopusDeployments *octopusdeploy.Deployments
+	err = retry.Do(
+		func() error {
+			var err error
+			octopusDeployments, err = o.client.Deployments.GetDeployments(projectReleases[0], &octopusdeploy.DeploymentQuery{
+				Skip: 0,
+				Take: 10000,
+			})
+			return err
+		}, RetryOptions)
 
 	if err != nil {
 		return false, err
 	}
 
-	if len(deployments.Items) == 0 {
+	if len(octopusDeployments.Items) == 0 {
 		return false, nil
 	}
 
@@ -102,7 +118,7 @@ func (o *LiveOctopusClient) IsDeployed(projectId string, releaseVersion string, 
 		return false, err
 	}
 
-	environmentDeployments := lo.Filter(deployments.Items, func(item *octopusdeploy.Deployment, index int) bool {
+	environmentDeployments := lo.Filter(octopusDeployments.Items, func(item *octopusdeploy.Deployment, index int) bool {
 		return item.EnvironmentID == environmentId
 	})
 
@@ -110,18 +126,25 @@ func (o *LiveOctopusClient) IsDeployed(projectId string, releaseVersion string, 
 }
 
 func (o *LiveOctopusClient) GetReleaseVersions(projectId string) ([]string, error) {
-	releases, err := o.client.Releases.Get(octopusdeploy.ReleasesQuery{
-		IDs:                nil,
-		IgnoreChannelRules: false,
-		Skip:               0,
-		Take:               1000,
-	})
+
+	var octopusReleases *octopusdeploy.Releases
+	err := retry.Do(
+		func() error {
+			var err error
+			octopusReleases, err = o.client.Releases.Get(octopusdeploy.ReleasesQuery{
+				IDs:                nil,
+				IgnoreChannelRules: false,
+				Skip:               0,
+				Take:               1000,
+			})
+			return err
+		}, RetryOptions)
 
 	if err != nil {
 		return nil, err
 	}
 
-	projectReleases := lo.FilterMap(releases.Items, func(item *octopusdeploy.Release, index int) (string, bool) {
+	projectReleases := lo.FilterMap(octopusReleases.Items, func(item *octopusdeploy.Release, index int) (string, bool) {
 		return item.Version, item.ProjectID == projectId
 	})
 
@@ -376,19 +399,24 @@ func (o *LiveOctopusClient) getPackages(project models.ArgoCDProject, updateMess
 
 // getRelease finds the release for a given version in a project, or it creates a new release.
 func (o *LiveOctopusClient) getRelease(project models.ArgoCDProject, version string, channelId string, updateMessage models.ApplicationUpdateMessage) (*octopusdeploy.Release, bool, error) {
-
-	releases, err := o.client.Releases.Get(octopusdeploy.ReleasesQuery{
-		IDs:                nil,
-		IgnoreChannelRules: false,
-		Skip:               0,
-		Take:               10000,
-	})
+	var octopusReleases *octopusdeploy.Releases
+	err := retry.Do(
+		func() error {
+			var err error
+			octopusReleases, err = o.client.Releases.Get(octopusdeploy.ReleasesQuery{
+				IDs:                nil,
+				IgnoreChannelRules: false,
+				Skip:               0,
+				Take:               10000,
+			})
+			return err
+		}, RetryOptions)
 
 	if err != nil {
 		return nil, false, err
 	}
 
-	existingReleases := lo.Filter(releases.Items, func(item *octopusdeploy.Release, index int) bool {
+	existingReleases := lo.Filter(octopusReleases.Items, func(item *octopusdeploy.Release, index int) bool {
 		return item.ProjectID == project.Project.ID && item.Version == version
 	})
 
@@ -545,14 +573,19 @@ func (o *LiveOctopusClient) getProjectVariables(projectId string) (*octopusdeplo
 			return nil, err
 		}
 	} else {
-		freshVariables, err := o.client.Variables.GetAll(projectId)
-		variables = &freshVariables
+		err = retry.Do(
+			func() error {
+				freshVariables, err := o.client.Variables.GetAll(projectId)
+				variables = &freshVariables
+				return err
+			},
+			RetryOptions)
 
 		if err != nil {
 			return nil, err
 		}
 
-		variablesData, err = json.Marshal(freshVariables)
+		variablesData, err = json.Marshal(variables)
 
 		if err != nil {
 			return nil, err
@@ -570,22 +603,28 @@ func (o *LiveOctopusClient) getProjectVariables(projectId string) (*octopusdeplo
 
 func (o *LiveOctopusClient) getAllProject() (*octopusdeploy.Projects, error) {
 	// Load projects, and cache the results
-	projects := &octopusdeploy.Projects{}
+	octopusProjects := &octopusdeploy.Projects{}
 	projectsData, err := o.bigCache.Get("AllProjects")
 	if err == nil {
-		err = json.Unmarshal(projectsData, projects)
+		err = json.Unmarshal(projectsData, octopusProjects)
 
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		projects, err = o.client.Projects.Get(octopusdeploy.ProjectsQuery{Take: MaxInt})
+		err = retry.Do(
+			func() error {
+				var err error
+				octopusProjects, err = o.client.Projects.Get(octopusdeploy.ProjectsQuery{Take: MaxInt})
+				return err
+			},
+			RetryOptions)
 
 		if err != nil {
 			return nil, err
 		}
 
-		projectsData, err = json.Marshal(projects)
+		projectsData, err = json.Marshal(octopusProjects)
 
 		if err != nil {
 			return nil, err
@@ -598,7 +637,7 @@ func (o *LiveOctopusClient) getAllProject() (*octopusdeploy.Projects, error) {
 		}
 	}
 
-	return projects, nil
+	return octopusProjects, nil
 }
 
 func (o *LiveOctopusClient) getLifecycle(lifecycleId string) (*octopusdeploy.Lifecycle, error) {
@@ -621,17 +660,23 @@ func (o *LiveOctopusClient) getLifecycle(lifecycleId string) (*octopusdeploy.Lif
 			Take:        1,
 		}
 
-		lifecycles, err := o.client.Lifecycles.Get(lifecycleQuery)
+		var octopusLifecycles *octopusdeploy.Lifecycles
+		err = retry.Do(
+			func() error {
+				var err error
+				octopusLifecycles, err = o.client.Lifecycles.Get(lifecycleQuery)
+				return err
+			}, RetryOptions)
 
 		if err != nil {
 			return nil, nil
 		}
 
-		if len(lifecycles.Items) != 1 {
+		if len(octopusLifecycles.Items) != 1 {
 			return nil, errors.New("failed to find lifecycle with ID " + lifecycleId)
 		}
 
-		lifecyclesData, err := json.Marshal(lifecycles.Items[0])
+		lifecyclesData, err := json.Marshal(octopusLifecycles.Items[0])
 
 		if err != nil {
 			return nil, err
@@ -643,17 +688,17 @@ func (o *LiveOctopusClient) getLifecycle(lifecycleId string) (*octopusdeploy.Lif
 			return nil, err
 		}
 
-		return lifecycles.Items[0], nil
+		return octopusLifecycles.Items[0], nil
 	}
 }
 
 func (o *LiveOctopusClient) getChannel(project *octopusdeploy.Project, channel string) (*octopusdeploy.Channel, error) {
 	// Load variables, and cache the results
-	channels := &octopusdeploy.Channels{}
+	octopusChannels := &octopusdeploy.Channels{}
 	channelData, err := o.bigCache.Get("AllChannels")
 
 	if err == nil {
-		err = json.Unmarshal(channelData, channels)
+		err = json.Unmarshal(channelData, octopusChannels)
 
 		if err != nil {
 			return nil, err
@@ -664,13 +709,19 @@ func (o *LiveOctopusClient) getChannel(project *octopusdeploy.Project, channel s
 			Skip: 0,
 		}
 
-		channels, err = o.client.Channels.Get(channelQuery)
+		err = retry.Do(
+			func() error {
+				var err error
+				octopusChannels, err = o.client.Channels.Get(channelQuery)
+				return err
+			},
+			RetryOptions)
 
 		if err != nil {
 			return nil, err
 		}
 
-		channelsData, err := json.Marshal(channels)
+		channelsData, err := json.Marshal(octopusChannels)
 
 		if err != nil {
 			return nil, err
@@ -679,7 +730,7 @@ func (o *LiveOctopusClient) getChannel(project *octopusdeploy.Project, channel s
 		err = o.bigCache.Set("AllChannels", channelsData)
 	}
 
-	channelResource := lo.Filter(channels.Items, func(item *octopusdeploy.Channel, index int) bool {
+	channelResource := lo.Filter(octopusChannels.Items, func(item *octopusdeploy.Channel, index int) bool {
 		return item.Name == channel && item.ProjectID == project.ID
 	})
 
@@ -712,13 +763,19 @@ func (o *LiveOctopusClient) getDefaultChannel(project *octopusdeploy.Project) (*
 			Skip: 0,
 		}
 
-		channels, err := o.client.Channels.Get(channelQuery)
+		var octopusChannels *octopusdeploy.Channels
+		err = retry.Do(
+			func() error {
+				var err error
+				octopusChannels, err = o.client.Channels.Get(channelQuery)
+				return err
+			}, RetryOptions)
 
 		if err != nil {
 			return nil, err
 		}
 
-		defaultChannel := lo.Filter(channels.Items, func(item *octopusdeploy.Channel, index int) bool {
+		defaultChannel := lo.Filter(octopusChannels.Items, func(item *octopusdeploy.Channel, index int) bool {
 			return item.IsDefault && item.ProjectID == project.ID
 		})
 
@@ -763,13 +820,20 @@ func (o *LiveOctopusClient) getEnvironmentId(environmentName string) (string, er
 			Name: environmentName,
 		}
 
-		environments, err := o.client.Environments.Get(environmentsQuery)
+		var octopusEnvironments *octopusdeploy.Environments
+		err = retry.Do(
+			func() error {
+				var err error
+				octopusEnvironments, err = o.client.Environments.Get(environmentsQuery)
+				return err
+			},
+			RetryOptions)
 
 		if err != nil {
 			return "", nil
 		}
 
-		filteredEnvironments := lo.Filter(environments.Items, func(e *octopusdeploy.Environment, index int) bool {
+		filteredEnvironments := lo.Filter(octopusEnvironments.Items, func(e *octopusdeploy.Environment, index int) bool {
 			return e.Name == environmentName
 		})
 
@@ -845,7 +909,13 @@ func (o *LiveOctopusClient) buildPackageVersionBaseline(octopus *octopusApiClien
 		feedIds = append(feedIds, k)
 	}
 	sort.Strings(feedIds) // we need to sort them otherwise the order is indeterminate. Server doesn't care but our unit tests fail
-	foundFeeds, err := octopus.Feeds.Get(feeds.FeedsQuery{IDs: feedIds, Take: len(feedIds)})
+	var foundFeeds *feeds.Feeds
+	err := retry.Do(
+		func() error {
+			var err error
+			foundFeeds, err = octopus.Feeds.Get(feeds.FeedsQuery{IDs: feedIds, Take: len(feedIds)})
+			return err
+		}, RetryOptions)
 	if err != nil {
 		return nil, err
 	}

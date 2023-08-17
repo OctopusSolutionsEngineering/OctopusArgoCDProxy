@@ -8,6 +8,7 @@ require (
 	github.com/OctopusDeploy/go-octopusdeploy/v2 v2.30.1
 	github.com/allegro/bigcache/v3 v3.1.0
 	github.com/argoproj/argo-cd/v2 v2.7.10
+	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/gin-gonic/gin v1.9.1
 	github.com/hashicorp/go-multierror v1.0.0
 	github.com/samber/lo v1.38.1

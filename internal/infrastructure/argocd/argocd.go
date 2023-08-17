@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
+	"github.com/avast/retry-go"
 	"os"
 
 	"github.com/argoproj/argo-cd/v2/pkg/apiclient/cluster"
@@ -60,7 +61,13 @@ func NewClient() (*Client, error) {
 }
 
 func (c *Client) GetClusters() ([]v1alpha1.Cluster, error) {
-	cl, err := c.clusterClient.List(context.Background(), &cluster.ClusterQuery{})
+	var cl *v1alpha1.ClusterList
+	err := retry.Do(
+		func() error {
+			var err error
+			cl, err = c.clusterClient.List(context.Background(), &cluster.ClusterQuery{})
+			return err
+		})
 	if err != nil {
 		return nil, err
 	}
@@ -69,21 +76,44 @@ func (c *Client) GetClusters() ([]v1alpha1.Cluster, error) {
 }
 
 func (c *Client) GetProject(name string) (*v1alpha1.AppProject, error) {
-	return c.projectClient.Get(context.Background(), &project.ProjectQuery{
-		Name: name,
-	})
+	var appProject *v1alpha1.AppProject
+	err := retry.Do(
+		func() error {
+			var err error
+			appProject, err = c.projectClient.Get(context.Background(), &project.ProjectQuery{
+				Name: name,
+			})
+			return err
+		})
+
+	return appProject, err
 }
 
 func (c *Client) GetApplication(name string, namespace string) (*v1alpha1.Application, error) {
-	return c.applicationClient.Get(context.Background(), &application.ApplicationQuery{
-		Name:         &name,
-		AppNamespace: &namespace,
-	})
+	var argoApplication *v1alpha1.Application
+	err := retry.Do(
+		func() error {
+			var err error
+			argoApplication, err = c.applicationClient.Get(context.Background(), &application.ApplicationQuery{
+				Name:         &name,
+				AppNamespace: &namespace,
+			})
+			return err
+		})
+
+	return argoApplication, err
 }
 
 func (c *Client) GetApplicationResourceTree(name string, namespace string) (*v1alpha1.ApplicationTree, error) {
-	return c.applicationClient.ResourceTree(context.Background(), &application.ResourcesQuery{
-		ApplicationName: &name,
-		AppNamespace:    &namespace,
-	})
+	var resourceTree *v1alpha1.ApplicationTree
+	err := retry.Do(
+		func() error {
+			var err error
+			resourceTree, err = c.applicationClient.ResourceTree(context.Background(), &application.ResourcesQuery{
+				ApplicationName: &name,
+				AppNamespace:    &namespace,
+			})
+			return err
+		})
+	return resourceTree, err
 }
