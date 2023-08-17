@@ -409,8 +409,8 @@ func (o *LiveOctopusClient) getProject(application string, namespace string) ([]
 			}
 
 			return models.ImagePackageVersion{
-				Image:            match[2],
-				PackageReference: variable.Value,
+				Image:            variable.Value,
+				PackageReference: match[2],
 			}, true
 		})
 
