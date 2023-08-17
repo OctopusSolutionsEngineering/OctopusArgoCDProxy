@@ -5,13 +5,14 @@ go 1.20
 require (
 	github.com/Masterminds/semver/v3 v3.2.0
 	github.com/OctopusDeploy/go-octopusdeploy v1.8.6
+	github.com/OctopusDeploy/go-octopusdeploy/v2 v2.30.1
 	github.com/allegro/bigcache/v3 v3.1.0
 	github.com/argoproj/argo-cd/v2 v2.7.10
 	github.com/gin-gonic/gin v1.9.1
 	github.com/hashicorp/go-multierror v1.0.0
 	github.com/samber/lo v1.38.1
 	go.uber.org/zap v1.24.0
-	golang.org/x/exp v0.0.0-20220303212507-bbda1eaf7a17
+	golang.org/x/exp v0.0.0-20230129154200-a960b3787bd2
 	k8s.io/utils v0.0.0-20220210201930-3a6ce19ff2f9
 )
 
@@ -86,7 +87,6 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
-	github.com/kinbiko/jsonassert v1.1.1 // indirect
 	github.com/klauspost/compress v1.16.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.4 // indirect
 	github.com/leodido/go-urn v1.2.4 // indirect

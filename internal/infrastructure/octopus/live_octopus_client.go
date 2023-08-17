@@ -6,6 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/OctopusDeploy/go-octopusdeploy/octopusdeploy"
+	"github.com/OctopusDeploy/go-octopusdeploy/v2/pkg/channels"
+	octopusApiClient "github.com/OctopusDeploy/go-octopusdeploy/v2/pkg/client"
+	"github.com/OctopusDeploy/go-octopusdeploy/v2/pkg/deployments"
+	"github.com/OctopusDeploy/go-octopusdeploy/v2/pkg/feeds"
+	"github.com/OctopusDeploy/go-octopusdeploy/v2/pkg/releases"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/logging"
 	"github.com/allegro/bigcache/v3"
@@ -15,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -204,6 +210,32 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.Applicat
 	return err
 }
 
+// getClient2 returns a client for the version 2 octopus go library
+func getClient2() (*octopusApiClient.Client, error) {
+	if os.Getenv("OCTOPUS_SERVER") == "" {
+		return nil, errors.New("octoargosync-init-octoclienterror - OCTOPUS_SERVER must be defined")
+	}
+
+	if os.Getenv("OCTOPUS_API_KEY") == "" {
+		return nil, errors.New("octoargosync-init-octoclienterror - OCTOPUS_API_KEY must be defined")
+	}
+
+	octopusUrl, err := url.Parse(os.Getenv("OCTOPUS_SERVER"))
+
+	if err != nil {
+		return nil, fmt.Errorf("octoargosync-init-octoclienterror - failed to parse OCTOPUS_SERVER as a url: %w", err)
+	}
+
+	client, err := octopusApiClient.NewClient(nil, octopusUrl, os.Getenv("OCTOPUS_API_KEY"), os.Getenv("OCTOPUS_SPACE_ID"))
+
+	if err != nil {
+		return nil, fmt.Errorf("octoargosync-init-octoclienterror - failed to create the Octopus API client. Check that the OCTOPUS_SERVER, OCTOPUS_API_KEY, and OCTOPUS_SPACE_ID environment variables are valid: %w", err)
+	}
+
+	return client, nil
+}
+
+// getClient returns a client for the version 1 octopus go library
 func getClient() (*octopusdeploy.Client, error) {
 	if os.Getenv("OCTOPUS_SERVER") == "" {
 		return nil, errors.New("octoargosync-init-octoclienterror - OCTOPUS_SERVER must be defined")
@@ -228,6 +260,8 @@ func getClient() (*octopusdeploy.Client, error) {
 	return client, nil
 }
 
+// getArgoCdChannel returns the default channel if no channel was indicated on the project, otherwise the specific
+// channel is returned.
 func (o *LiveOctopusClient) getArgoCdChannel(project models.ArgoCDProject) (*octopusdeploy.Channel, error) {
 	if project.Channel != "" {
 		return o.getChannel(project.Project, project.Channel)
@@ -264,6 +298,35 @@ func (o *LiveOctopusClient) validateLifecycle(lifecycle *octopusdeploy.Lifecycle
 	}
 
 	return nil
+}
+
+// getDefaultPackages gets the default package versions for the project
+func (o *LiveOctopusClient) getDefaultPackages(project models.ArgoCDProject, channelId string) ([]*octopusdeploy.SelectedPackage, error) {
+	octopus, err := getClient2()
+
+	if err != nil {
+		return nil, err
+	}
+
+	deploymentProcess, err := octopus.DeploymentProcesses.GetByID(project.Project.DeploymentProcessID)
+
+	if err != nil {
+		return nil, err
+	}
+
+	channel, err := octopus.Channels.GetByID(channelId)
+
+	if err != nil {
+		return nil, err
+	}
+
+	deploymentProcessTemplate, err := octopus.DeploymentProcesses.GetTemplate(deploymentProcess, channelId, "")
+
+	if err != nil {
+		return nil, err
+	}
+
+	return o.buildPackageVersionBaseline(octopus, deploymentProcessTemplate, channel)
 }
 
 // getPackages extracts packages and the images that the package versions are selected from
@@ -329,18 +392,29 @@ func (o *LiveOctopusClient) getRelease(project models.ArgoCDProject, version str
 		return item.ProjectID == project.Project.ID && item.Version == version
 	})
 
+	// Get the package versions that are mapped by the project metadata
 	packages, err := o.getPackages(project, updateMessage)
 
 	if err != nil {
 		return nil, false, err
 	}
 
+	// Get the latest package versions
+	defaultPackages, err := o.getDefaultPackages(project, channelId)
+
+	if err != nil {
+		return nil, false, err
+	}
+
+	// override any default packages with those versions that are specifically configured
+	finalPackages := o.overridePackageSelections(defaultPackages, packages)
+
 	if len(existingReleases) == 0 {
 		release := &octopusdeploy.Release{
 			ChannelID:        channelId,
 			ProjectID:        project.Project.ID,
 			Version:          version,
-			SelectedPackages: packages,
+			SelectedPackages: finalPackages,
 		}
 
 		release, err := o.client.Releases.Add(release)
@@ -348,6 +422,23 @@ func (o *LiveOctopusClient) getRelease(project models.ArgoCDProject, version str
 	} else {
 		return existingReleases[0], false, nil
 	}
+}
+
+// overridePackageSelections returns package selections with overrides applied to them
+func (o *LiveOctopusClient) overridePackageSelections(defaultPackages []*octopusdeploy.SelectedPackage, packages []*octopusdeploy.SelectedPackage) []*octopusdeploy.SelectedPackage {
+	return lo.Map(defaultPackages, func(item *octopusdeploy.SelectedPackage, index int) *octopusdeploy.SelectedPackage {
+		override, found := lo.Find(packages, func(overridePackage *octopusdeploy.SelectedPackage) bool {
+			return overridePackage.ActionName == item.ActionName &&
+				overridePackage.StepName == item.StepName &&
+				overridePackage.PackageReferenceName == item.StepName
+		})
+
+		if found {
+			return override
+		}
+
+		return item
+	})
 }
 
 // getProject scans Octopus for the project that has been linked to the Argo CD Application and namespace
@@ -692,4 +783,116 @@ func (o *LiveOctopusClient) getEnvironmentId(environmentName string) (string, er
 
 		return filteredEnvironments[0].ID, nil
 	}
+}
+
+// buildPackageVersionBaseline has been shamelessly lifted from https://github.com/OctopusDeploy/cli
+func (o *LiveOctopusClient) buildPackageVersionBaseline(octopus *octopusApiClient.Client, deploymentProcessTemplate *deployments.DeploymentProcessTemplate, channel *channels.Channel) ([]*octopusdeploy.SelectedPackage, error) {
+	result := make([]*octopusdeploy.SelectedPackage, 0, len(deploymentProcessTemplate.Packages))
+
+	// step 1: pass over all the packages in the deployment process, group them
+	// by their feed, then subgroup by packageId
+
+	// map(key: FeedID, value: list of references using the package so we can trace back to steps)
+	feedsToQuery := make(map[string][]releases.ReleaseTemplatePackage)
+	for _, pkg := range deploymentProcessTemplate.Packages {
+
+		// If a package is not considered resolvable by the server, don't attempt to query it's feed or lookup
+		// any potential versions for it; we can't succeed in that because variable templates won't get expanded
+		// until deployment time
+		if !pkg.IsResolvable {
+			result = append(result, &octopusdeploy.SelectedPackage{
+				ActionName:           pkg.ActionName,
+				PackageReferenceName: pkg.PackageReferenceName,
+				Version:              "",
+			})
+			continue
+		}
+		if feedPackages, seenFeedBefore := feedsToQuery[pkg.FeedID]; !seenFeedBefore {
+			feedsToQuery[pkg.FeedID] = []releases.ReleaseTemplatePackage{pkg}
+		} else {
+			// seen both the feed and package, but not against this particular step
+			feedsToQuery[pkg.FeedID] = append(feedPackages, pkg)
+		}
+	}
+
+	if len(feedsToQuery) == 0 {
+		return make([]*octopusdeploy.SelectedPackage, 0), nil
+	}
+
+	// step 2: load the feed resources, so we can get SearchPackageVersionsTemplate
+	feedIds := make([]string, 0, len(feedsToQuery))
+	for k := range feedsToQuery {
+		feedIds = append(feedIds, k)
+	}
+	sort.Strings(feedIds) // we need to sort them otherwise the order is indeterminate. Server doesn't care but our unit tests fail
+	foundFeeds, err := octopus.Feeds.Get(feeds.FeedsQuery{IDs: feedIds, Take: len(feedIds)})
+	if err != nil {
+		return nil, err
+	}
+
+	// step 3: for each package within a feed, ask the server to select the best package version for it, applying the channel rules
+	for _, feed := range foundFeeds.Items {
+		packageRefsInFeed, ok := feedsToQuery[feed.GetID()]
+		if !ok {
+			return nil, errors.New("internal consistency error; feed ID not found in feedsToQuery") // should never happen
+		}
+
+		cache := make(map[feeds.SearchPackageVersionsQuery]string) // cache value is the package version
+
+		for _, packageRef := range packageRefsInFeed {
+			query := feeds.SearchPackageVersionsQuery{
+				PackageID: packageRef.PackageID,
+				Take:      1,
+			}
+			// look in the channel rules for a version filter for this step+package
+		rulesLoop:
+			for _, rule := range channel.Rules {
+				for _, ap := range rule.ActionPackages {
+					if ap.PackageReference == packageRef.PackageReferenceName && ap.DeploymentAction == packageRef.ActionName {
+						// this rule applies to our step/packageref combo
+						query.PreReleaseTag = rule.Tag
+						query.VersionRange = rule.VersionRange
+						// the octopus server won't let the same package be targeted by more than one rule, so
+						// once we've found the first matching rule for our step+package, we can stop looping
+						break rulesLoop
+					}
+				}
+			}
+
+			if cachedVersion, ok := cache[query]; ok {
+				result = append(result, &octopusdeploy.SelectedPackage{
+					ActionName:           packageRef.ActionName,
+					PackageReferenceName: packageRef.PackageReferenceName,
+					Version:              cachedVersion,
+				})
+			} else { // uncached; ask the server
+				versions, err := octopus.Feeds.SearchFeedPackageVersions(feed, query)
+				if err != nil {
+					return nil, err
+				}
+
+				switch len(versions.Items) {
+				case 0: // no package found; cache the response
+					cache[query] = ""
+					result = append(result, &octopusdeploy.SelectedPackage{
+						ActionName:           packageRef.ActionName,
+						PackageReferenceName: packageRef.PackageReferenceName,
+						Version:              "",
+					})
+
+				case 1:
+					cache[query] = versions.Items[0].Version
+					result = append(result, &octopusdeploy.SelectedPackage{
+						ActionName:           packageRef.ActionName,
+						PackageReferenceName: packageRef.PackageReferenceName,
+						Version:              versions.Items[0].Version,
+					})
+
+				default:
+					return nil, errors.New("internal error; more than one package returned when only 1 specified")
+				}
+			}
+		}
+	}
+	return result, nil
 }
