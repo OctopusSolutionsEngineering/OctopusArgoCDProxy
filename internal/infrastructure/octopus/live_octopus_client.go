@@ -21,6 +21,7 @@ import (
 const MaxInt = 2147483647
 
 var ApplicationEnvironmentVariable = regexp.MustCompile("^Metadata.ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.Environment$")
+var ApplicationChannelVariable = regexp.MustCompile("^Metadata.ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.Channel$")
 var ApplicationImageReleaseVersionVariable = regexp.MustCompile("^Metadata.ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.ImageForReleaseVersion$")
 var ApplicationImagePackageVersionVariable = regexp.MustCompile("^Metadata.ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.ImageForPackageVersion\\[([^\\[\\]]*?)]$")
 
@@ -135,10 +136,18 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.Applicat
 
 	for _, project := range projects {
 
-		defaultChannel, err := o.getDefaultChannel(project.Project)
+		channel, err := o.getDefaultChannel(project.Project)
 
 		if err != nil {
 			return err
+		}
+
+		if len(project.Channel) != 0 {
+			channel, err = o.getChannel(project.Project, project.Channel)
+
+			if err != nil {
+				return err
+			}
 		}
 
 		environmentId, err := o.getEnvironmentId(project.Environment)
@@ -149,7 +158,7 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.Applicat
 				updateMessage.Namespace + "/" + updateMessage.Application + "].Environment is set to a valid environment name")
 		}
 
-		lifecycle, err := o.getLifecycle(defaultChannel.LifecycleID)
+		lifecycle, err := o.getLifecycle(channel.LifecycleID)
 
 		if err != nil {
 			return err
@@ -167,7 +176,7 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.Applicat
 			return err
 		}
 
-		release, newRelease, err := o.getRelease(project, version, defaultChannel.ID, updateMessage)
+		release, newRelease, err := o.getRelease(project, version, channel.ID, updateMessage)
 
 		if err != nil {
 			return err
@@ -354,6 +363,21 @@ func (o *LiveOctopusClient) getProject(application string, namespace string) ([]
 			return variable.Value, true
 		})
 
+		appNameChannel := lo.FilterMap(variables.Variables, func(variable *octopusdeploy.Variable, index int) (string, bool) {
+			match := ApplicationChannelVariable.FindStringSubmatch(variable.Name)
+
+			if len(match) != 2 || match[1] != namespace+"/"+application {
+				return "", false
+			}
+
+			return variable.Value, true
+		})
+
+		channel := ""
+		if len(appNameChannel) != 0 {
+			channel = appNameChannel[0]
+		}
+
 		releaseVersionImages := lo.FilterMap(variables.Variables, func(variable *octopusdeploy.Variable, index int) (string, bool) {
 			match := ApplicationImageReleaseVersionVariable.FindStringSubmatch(variable.Name)
 
@@ -386,6 +410,7 @@ func (o *LiveOctopusClient) getProject(application string, namespace string) ([]
 			return models.ArgoCDProject{
 				Project:             project,
 				Environment:         appNameEnvironments[0],
+				Channel:             channel,
 				ReleaseVersionImage: releaseVersionImage,
 				PackageVersions:     packageVersionImages,
 			}, true
@@ -507,6 +532,49 @@ func (o *LiveOctopusClient) getLifecycle(lifecycleId string) (*octopusdeploy.Lif
 	}
 
 	return lifecycle, nil
+}
+
+func (o *LiveOctopusClient) getChannel(project *octopusdeploy.Project, channel string) (*octopusdeploy.Channel, error) {
+	// Load variables, and cache the results
+	channels := &octopusdeploy.Channels{}
+	channelData, err := o.bigCache.Get("AllChannels")
+
+	if err == nil {
+		err = json.Unmarshal(channelData, channels)
+
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		channelQuery := octopusdeploy.ChannelsQuery{
+			Take: MaxInt,
+			Skip: 0,
+		}
+
+		channels, err = o.client.Channels.Get(channelQuery)
+
+		if err != nil {
+			return nil, err
+		}
+
+		channelsData, err := json.Marshal(channels)
+
+		if err != nil {
+			return nil, err
+		}
+
+		err = o.bigCache.Set("AllChannels", channelsData)
+	}
+
+	channelResource := lo.Filter(channels.Items, func(item *octopusdeploy.Channel, index int) bool {
+		return item.Name == channel && item.ProjectID == project.ID
+	})
+
+	if len(channelResource) != 1 {
+		return nil, errors.New("could not find the channel called " + channel + " for the project " + project.Name)
+	}
+
+	return channelResource[0], nil
 }
 
 func (o *LiveOctopusClient) getDefaultChannel(project *octopusdeploy.Project) (*octopusdeploy.Channel, error) {

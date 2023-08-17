@@ -10,6 +10,7 @@ type ImagePackageVersion struct {
 type ArgoCDProject struct {
 	Project             *octopusdeploy.Project
 	Environment         string
+	Channel             string
 	ReleaseVersionImage string
 	PackageVersions     []ImagePackageVersion
 }
