@@ -369,7 +369,7 @@ func (o *LiveOctopusClient) getPackages(project models.ArgoCDProject, updateMess
 		})
 
 		if len(imageVersion) == 0 {
-			o.logger.GetLogger().Error("The ArgoCD deployment does not contain an image called " + imagePackageVersion.Image + " so the default package version will be used.")
+			o.logger.GetLogger().Error("octoargosync-init-argoimagenotfound: The ArgoCD deployment does not contain an image called " + imagePackageVersion.Image + " so the default package version will be used.")
 			continue
 		}
 
@@ -390,7 +390,7 @@ func (o *LiveOctopusClient) getPackages(project models.ArgoCDProject, updateMess
 				Version:              imageVersion[0],
 			})
 		} else {
-			o.logger.GetLogger().Error("The step package reference " + imagePackageVersion.PackageReference + " was in an unexpected format. It must be a string separated by 0 or 1 colons e.g. stepname, stepname:packagename")
+			o.logger.GetLogger().Error("octoargosync-init-octopackagereferenceerror: The step package reference " + imagePackageVersion.PackageReference + " was in an unexpected format. It must be a string separated by 0 or 1 colons e.g. stepname, stepname:packagename")
 		}
 	}
 

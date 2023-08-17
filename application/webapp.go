@@ -44,7 +44,7 @@ func start(createReleaseHandler *hanlders.CreateReleaseHandler) error {
 		err := jsonex.DeserializeJson(c.Request.Body, &applicationUpdateMessage)
 
 		if err != nil {
-			logger.GetLogger().Error("Failed to deserialize request body: " + err.Error())
+			logger.GetLogger().Error("octoargosync-init-requestbodyerror: Failed to deserialize request body: " + err.Error())
 
 			c.JSON(http.StatusOK, models.ErrorResponse{
 				Status:  "Error",
@@ -56,7 +56,7 @@ func start(createReleaseHandler *hanlders.CreateReleaseHandler) error {
 		err = createReleaseHandler.CreateRelease(applicationUpdateMessage)
 
 		if err != nil {
-			logger.GetLogger().Error("Failed to create a release: " + err.Error())
+			logger.GetLogger().Error("octoargosync-init-octocreatereleaseerror: Failed to create a release: " + err.Error())
 
 			c.JSON(http.StatusOK, models.ErrorResponse{
 				Status:  "Error",
