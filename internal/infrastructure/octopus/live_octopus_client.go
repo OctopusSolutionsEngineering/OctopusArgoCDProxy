@@ -13,6 +13,7 @@ import (
 	"github.com/OctopusDeploy/go-octopusdeploy/v2/pkg/releases"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/logging"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/retry_config"
 	"github.com/allegro/bigcache/v3"
 	"github.com/avast/retry-go"
 	"github.com/hashicorp/go-multierror"
@@ -27,8 +28,6 @@ import (
 )
 
 const MaxInt = 2147483647
-
-var RetryOptions = retry.MaxDelay(3 * time.Second)
 
 var ApplicationEnvironmentVariable = regexp.MustCompile("^Metadata.ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.Environment$")
 var ApplicationChannelVariable = regexp.MustCompile("^Metadata.ArgoCD\\.Application\\[([^\\[\\]]*?)]\\.Channel$")
@@ -79,7 +78,7 @@ func (o *LiveOctopusClient) IsDeployed(projectId string, releaseVersion string, 
 			})
 
 			return err
-		}, RetryOptions)
+		}, retry_config.RetryOptions)
 
 	if err != nil {
 		return false, err
@@ -102,7 +101,7 @@ func (o *LiveOctopusClient) IsDeployed(projectId string, releaseVersion string, 
 				Take: 10000,
 			})
 			return err
-		}, RetryOptions)
+		}, retry_config.RetryOptions)
 
 	if err != nil {
 		return false, err
@@ -138,7 +137,7 @@ func (o *LiveOctopusClient) GetReleaseVersions(projectId string) ([]string, erro
 				Take:               1000,
 			})
 			return err
-		}, RetryOptions)
+		}, retry_config.RetryOptions)
 
 	if err != nil {
 		return nil, err
@@ -410,7 +409,7 @@ func (o *LiveOctopusClient) getRelease(project models.ArgoCDProject, version str
 				Take:               10000,
 			})
 			return err
-		}, RetryOptions)
+		}, retry_config.RetryOptions)
 
 	if err != nil {
 		return nil, false, err
@@ -578,8 +577,7 @@ func (o *LiveOctopusClient) getProjectVariables(projectId string) (*octopusdeplo
 				freshVariables, err := o.client.Variables.GetAll(projectId)
 				variables = &freshVariables
 				return err
-			},
-			RetryOptions)
+			}, retry_config.RetryOptions)
 
 		if err != nil {
 			return nil, err
@@ -617,8 +615,7 @@ func (o *LiveOctopusClient) getAllProject() (*octopusdeploy.Projects, error) {
 				var err error
 				octopusProjects, err = o.client.Projects.Get(octopusdeploy.ProjectsQuery{Take: MaxInt})
 				return err
-			},
-			RetryOptions)
+			}, retry_config.RetryOptions)
 
 		if err != nil {
 			return nil, err
@@ -666,7 +663,7 @@ func (o *LiveOctopusClient) getLifecycle(lifecycleId string) (*octopusdeploy.Lif
 				var err error
 				octopusLifecycles, err = o.client.Lifecycles.Get(lifecycleQuery)
 				return err
-			}, RetryOptions)
+			}, retry_config.RetryOptions)
 
 		if err != nil {
 			return nil, nil
@@ -714,8 +711,7 @@ func (o *LiveOctopusClient) getChannel(project *octopusdeploy.Project, channel s
 				var err error
 				octopusChannels, err = o.client.Channels.Get(channelQuery)
 				return err
-			},
-			RetryOptions)
+			}, retry_config.RetryOptions)
 
 		if err != nil {
 			return nil, err
@@ -769,7 +765,7 @@ func (o *LiveOctopusClient) getDefaultChannel(project *octopusdeploy.Project) (*
 				var err error
 				octopusChannels, err = o.client.Channels.Get(channelQuery)
 				return err
-			}, RetryOptions)
+			}, retry_config.RetryOptions)
 
 		if err != nil {
 			return nil, err
@@ -826,8 +822,7 @@ func (o *LiveOctopusClient) getEnvironmentId(environmentName string) (string, er
 				var err error
 				octopusEnvironments, err = o.client.Environments.Get(environmentsQuery)
 				return err
-			},
-			RetryOptions)
+			}, retry_config.RetryOptions)
 
 		if err != nil {
 			return "", nil
@@ -915,7 +910,7 @@ func (o *LiveOctopusClient) buildPackageVersionBaseline(octopus *octopusApiClien
 			var err error
 			foundFeeds, err = octopus.Feeds.Get(feeds.FeedsQuery{IDs: feedIds, Take: len(feedIds)})
 			return err
-		}, RetryOptions)
+		}, retry_config.RetryOptions)
 	if err != nil {
 		return nil, err
 	}

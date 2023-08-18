@@ -3,6 +3,7 @@ package argocd
 import (
 	"context"
 	"errors"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/retry_config"
 	"github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
 	"github.com/avast/retry-go"
 	"os"
@@ -67,7 +68,7 @@ func (c *Client) GetClusters() ([]v1alpha1.Cluster, error) {
 			var err error
 			cl, err = c.clusterClient.List(context.Background(), &cluster.ClusterQuery{})
 			return err
-		})
+		}, retry_config.RetryOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +100,7 @@ func (c *Client) GetApplication(name string, namespace string) (*v1alpha1.Applic
 				AppNamespace: &namespace,
 			})
 			return err
-		})
+		}, retry_config.RetryOptions)
 
 	return argoApplication, err
 }
@@ -114,6 +115,6 @@ func (c *Client) GetApplicationResourceTree(name string, namespace string) (*v1a
 				AppNamespace:    &namespace,
 			})
 			return err
-		})
+		}, retry_config.RetryOptions)
 	return resourceTree, err
 }
