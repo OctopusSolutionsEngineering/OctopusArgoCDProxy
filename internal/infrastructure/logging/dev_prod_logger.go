@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// DevProdLogger provides logging facilities that can be configured via the APP_ENV environment variable
 type DevProdLogger struct {
 	log *zap.Logger
 }
