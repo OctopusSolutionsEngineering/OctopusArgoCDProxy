@@ -15,7 +15,7 @@ type SimpleRedeploymentVersioner struct {
 
 // GenerateReleaseVersion extracts the version from the target revision or the image version. It pays no attention
 // to existing releases, meaning redeployments from Argo trigger redeployemnts in Octopus.
-func (o *SimpleRedeploymentVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, project models.ArgoCDProject, updateMessage models.ApplicationUpdateMessage) (string, error) {
+func (o *SimpleRedeploymentVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (string, error) {
 
 	fallbackVersion := time.Now().Format("2006.01.02.150405")
 

@@ -15,7 +15,7 @@ type DefaultVersioner struct {
 
 // GenerateReleaseVersion will use the target revision, then a matching image version, then a git sha, then just a timestamp
 // to generate the release version.
-func (o *DefaultVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, project models.ArgoCDProject, updateMessage models.ApplicationUpdateMessage) (string, error) {
+func (o *DefaultVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (string, error) {
 	timestamp := time.Now().Format("20060102150405")
 
 	sha := strings.TrimSpace(updateMessage.CommitSha)

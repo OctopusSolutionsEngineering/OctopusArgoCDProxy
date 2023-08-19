@@ -17,7 +17,7 @@ type SimpleVersioner struct {
 
 // GenerateReleaseVersion will use the target revision, then a matching image version, then a git sha. It uses semver metadata
 // to ensure release versions are unique, treating redeployments as unique releases.
-func (o *SimpleVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, project models.ArgoCDProject, updateMessage models.ApplicationUpdateMessage) (string, error) {
+func (o *SimpleVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (string, error) {
 
 	fallbackVersion := time.Now().Format("2006.01.02.150405")
 
@@ -31,7 +31,7 @@ func (o *SimpleVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, pro
 	if len(Semver.FindStringSubmatch(updateMessage.TargetRevision)) != 0 {
 		version := updateMessage.TargetRevision
 
-		isDeployed, err := octo.IsDeployed(project.Project.ID, version, project.Environment)
+		isDeployed, err := octo.IsDeployed(project.Project.ID, version, project.Environment.Name)
 
 		if err != nil {
 			return "", err
@@ -85,7 +85,7 @@ func (o *SimpleVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, pro
 
 			version := versions[0]
 
-			isDeployed, err := octo.IsDeployed(project.Project.ID, version, project.Environment)
+			isDeployed, err := octo.IsDeployed(project.Project.ID, version, project.Environment.Name)
 
 			if err != nil {
 				return "", err
