@@ -15,7 +15,8 @@ type OctopusProjectAndVars struct {
 }
 
 // ArgoCDProject matches a project to the metadata information specified in the project's variables.
-// This object is mapped to a ArgoCDProjectExpanded.
+// The matching resources are only known by name at this point. This object is mapped to a ArgoCDProjectExpanded
+// to reference the full Octopus resources.
 type ArgoCDProject struct {
 	Project             *octopusdeploy.Project
 	EnvironmentName     string
@@ -24,7 +25,7 @@ type ArgoCDProject struct {
 	PackageVersions     []ImagePackageVersion
 }
 
-// ArgoCDProjectExpanded matches a project to the resources identified in a ArgoCDProject object.
+// ArgoCDProjectExpanded is an expanded version of ArgoCDProject, having mapped the resource names to real Octopus resources.
 type ArgoCDProjectExpanded struct {
 	Project             *octopusdeploy.Project
 	Environment         *octopusdeploy.Environment
