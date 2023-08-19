@@ -15,4 +15,8 @@ type OctopusClient interface {
 	GetReleaseVersions(project *octopusdeploy.Project) ([]types.OctopusReleaseVersion, error)
 	// IsDeployed returns true if the release is deployed to the specified environment
 	IsDeployed(project *octopusdeploy.Project, releaseVersion types.OctopusReleaseVersion, environment *octopusdeploy.Environment) (bool, error)
+	// GetLatestRelease returns the latest release for a project
+	GetLatestRelease(project *octopusdeploy.Project) (*octopusdeploy.Release, error)
+	// GetLatestDeploymentRelease returns the latest release thar has been deployed to a project's environment
+	GetLatestDeploymentRelease(project *octopusdeploy.Project, environment *octopusdeploy.Environment) (*octopusdeploy.Release, error)
 }

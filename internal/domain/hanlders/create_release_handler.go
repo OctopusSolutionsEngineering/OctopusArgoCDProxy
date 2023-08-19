@@ -101,6 +101,27 @@ func (c CreateReleaseHandler) CreateRelease(applicationUpdateMessage models.Appl
 						}
 					}
 
+					// The other edge case we want to catch is if another instance of the proxy has created a release
+					// after this release was first supposed to be created. If so, we drop this release as it is
+					// old now and should not appear to be the latest deployment.
+					lastestRelease, err := c.octo.GetLatestDeploymentRelease(project.Project, project.Environment)
+
+					if err != nil {
+						return err
+					}
+
+					if lastestRelease != nil && lastestRelease.Assembled.After(added) {
+						return nil
+					}
+
+					// It is conceivable that other race conditions can occur. Multiple proxies receiving many
+					// requests to create a release for a project on an Octopus instance that is not responding
+					// might lead to multiple releases being created in the wrong order. However, that scenario
+					// assumes many releases happening in quick succession, and in such an environment, the
+					// Octopus dashboard will soon correct itself again. So we don't try to enforce any strict
+					// synchronisation between proxies, and rely on the fact that releases will eventually be
+					// consistent.
+
 					version, err := c.versioner.GenerateReleaseVersion(project, applicationUpdateMessage)
 
 					if err != nil {

@@ -116,6 +116,94 @@ func (o *LiveOctopusClient) IsDeployed(project *octopusdeploy.Project, releaseVe
 	return len(environmentDeployments) != 0, nil
 }
 
+func (o *LiveOctopusClient) GetLatestDeploymentRelease(project *octopusdeploy.Project, environment *octopusdeploy.Environment) (*octopusdeploy.Release, error) {
+	// TODO: we can do this more efficiently with version 2 of the client library
+
+	var octopusReleases *octopusdeploy.Releases
+	err := retry.Do(
+		func() error {
+			var err error
+			octopusReleases, err = o.client.Releases.Get(octopusdeploy.ReleasesQuery{
+				IDs:                nil,
+				IgnoreChannelRules: false,
+				Skip:               0,
+				Take:               10000,
+			})
+
+			return err
+		}, retry_config.RetryOptions...)
+
+	if err != nil {
+		return nil, err
+	}
+
+	projectReleases := lo.Filter(octopusReleases.Items, func(item *octopusdeploy.Release, index int) bool {
+		return item.ProjectID == project.ID
+	})
+
+	if len(projectReleases) == 0 {
+		return nil, nil
+	}
+
+	slices.SortFunc(projectReleases, func(a, b *octopusdeploy.Release) bool {
+		return a.Assembled.After(b.Assembled)
+	})
+
+	for _, release := range projectReleases {
+		progression, err := o.client.Deployments.GetProgression(release)
+
+		if err != nil {
+			return nil, err
+		}
+
+		_, exists := lo.Find(progression.Environments, func(item *octopusdeploy.ReferenceDataItem) bool {
+			return item.ID == environment.ID
+		})
+
+		if exists {
+			return release, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (o *LiveOctopusClient) GetLatestRelease(project *octopusdeploy.Project) (*octopusdeploy.Release, error) {
+	// TODO: we can do this more efficiently with version 2 of the client library
+
+	var octopusReleases *octopusdeploy.Releases
+	err := retry.Do(
+		func() error {
+			var err error
+			octopusReleases, err = o.client.Releases.Get(octopusdeploy.ReleasesQuery{
+				IDs:                nil,
+				IgnoreChannelRules: false,
+				Skip:               0,
+				Take:               10000,
+			})
+
+			return err
+		}, retry_config.RetryOptions...)
+
+	if err != nil {
+		return nil, err
+	}
+
+	projectReleases := lo.Filter(octopusReleases.Items, func(item *octopusdeploy.Release, index int) bool {
+		return item.ProjectID == project.ID
+	})
+
+	if len(projectReleases) == 0 {
+		return nil, nil
+	}
+
+	slices.SortFunc(projectReleases, func(a, b *octopusdeploy.Release) bool {
+		return a.Assembled.After(b.Assembled)
+	})
+
+	return projectReleases[0], nil
+}
+
 func (o *LiveOctopusClient) GetReleaseVersions(project *octopusdeploy.Project) ([]types.OctopusReleaseVersion, error) {
 
 	var octopusReleases *octopusdeploy.Releases
