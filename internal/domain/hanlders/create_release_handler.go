@@ -46,7 +46,7 @@ func NewCreateReleaseHandler() (*CreateReleaseHandler, error) {
 		logger:          logger,
 		octo:            octo,
 		argo:            argocdClient,
-		versioner:       &versioners.DefaultVersioner{},
+		versioner:       &versioners.SimpleRedeploymentVersioner{},
 		projectReleases: sync.Map{},
 	}, nil
 }
