@@ -76,7 +76,7 @@ func (c CreateReleaseHandler) CreateRelease(applicationUpdateMessage models.Appl
 	}
 
 	for _, project := range expandedProjects {
-		version, err := c.versioner.GenerateReleaseVersion(c.octo, project, applicationUpdateMessage)
+		version, err := c.versioner.GenerateReleaseVersion(project, applicationUpdateMessage)
 
 		if err != nil {
 			return err

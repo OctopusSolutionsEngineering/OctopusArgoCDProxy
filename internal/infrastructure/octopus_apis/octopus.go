@@ -5,6 +5,7 @@ import (
 )
 
 type OctopusClient interface {
+	// GetProjects returns the details of projects that match the incoming message
 	GetProjects(updateMessage models.ApplicationUpdateMessage) ([]models.ArgoCDProjectExpanded, error)
 	// CreateAndDeployRelease will ensure the release is deployed to the correct environment, creating a new release if necessary
 	CreateAndDeployRelease(project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage, version string) error
