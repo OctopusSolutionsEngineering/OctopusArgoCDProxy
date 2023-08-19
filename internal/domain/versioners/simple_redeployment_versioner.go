@@ -3,7 +3,6 @@ package versioners
 import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
-	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/octopus_apis"
 	"github.com/samber/lo"
 	"sort"
 	"strings"
@@ -15,7 +14,7 @@ type SimpleRedeploymentVersioner struct {
 
 // GenerateReleaseVersion extracts the version from the target revision or the image version. It pays no attention
 // to existing releases, meaning redeployments from Argo trigger redeployemnts in Octopus.
-func (o *SimpleRedeploymentVersioner) GenerateReleaseVersion(octo octopus_apis.OctopusClient, project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (string, error) {
+func (o *SimpleRedeploymentVersioner) GenerateReleaseVersion(project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (string, error) {
 
 	fallbackVersion := time.Now().Format("2006.01.02.150405")
 

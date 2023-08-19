@@ -3,7 +3,6 @@ package versioners
 import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
-	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/octopus_apis"
 	"github.com/samber/lo"
 	"sort"
 	"strings"
@@ -15,7 +14,7 @@ type DefaultVersioner struct {
 
 // GenerateReleaseVersion will use the target revision, then a matching image version, then a git sha, then just a timestamp
 // to generate the release version.
-func (o *DefaultVersioner) GenerateReleaseVersion(octo octopus_apis.OctopusClient, project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (string, error) {
+func (o *DefaultVersioner) GenerateReleaseVersion(project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (string, error) {
 	timestamp := time.Now().Format("20060102150405")
 
 	sha := strings.TrimSpace(updateMessage.CommitSha)
