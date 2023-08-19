@@ -2,7 +2,7 @@ package versioners
 
 import (
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
-	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/types"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/types"
 )
 
 // ReleaseVersioner defines the functions required to create an Octopus release version
