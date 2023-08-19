@@ -53,19 +53,15 @@ func start(createReleaseHandler *hanlders.CreateReleaseHandler) error {
 			return
 		}
 
-		err = createReleaseHandler.CreateRelease(applicationUpdateMessage)
+		// Return a response as quickly as possible by doing the release creation in goroutine
+		go func(applicationUpdateMessage models.ApplicationUpdateMessage) {
+			err := createReleaseHandler.CreateRelease(applicationUpdateMessage)
+			if err != nil {
+				logger.GetLogger().Error("octoargosync-init-octocreatereleaseerror: Failed to create a release: " + err.Error())
+			}
+		}(applicationUpdateMessage)
 
-		if err != nil {
-			logger.GetLogger().Error("octoargosync-init-octocreatereleaseerror: Failed to create a release: " + err.Error())
-
-			c.JSON(http.StatusOK, models.ErrorResponse{
-				Status:  "Error",
-				Message: err.Error(),
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
+		c.JSON(http.StatusAccepted, gin.H{
 			"status": "OK",
 		})
 	})

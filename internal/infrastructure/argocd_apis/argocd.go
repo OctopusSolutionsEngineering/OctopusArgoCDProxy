@@ -69,7 +69,7 @@ func (c *ArgoCDClient) GetClusters() ([]v1alpha1.Cluster, error) {
 			var err error
 			cl, err = c.clusterClient.List(context.Background(), &cluster.ClusterQuery{})
 			return err
-		}, retry_config.RetryOptions)
+		}, retry_config.RetryOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func (c *ArgoCDClient) GetApplication(name string, namespace string) (*v1alpha1.
 				AppNamespace: &namespace,
 			})
 			return err
-		}, retry_config.RetryOptions)
+		}, retry_config.RetryOptions...)
 
 	return argoApplication, err
 }
@@ -116,6 +116,6 @@ func (c *ArgoCDClient) GetApplicationResourceTree(name string, namespace string)
 				AppNamespace:    &namespace,
 			})
 			return err
-		}, retry_config.RetryOptions)
+		}, retry_config.RetryOptions...)
 	return resourceTree, err
 }

@@ -6,7 +6,9 @@ import (
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/apploggers"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/argocd_apis"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/octopus_apis"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/retry_config"
 	"github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
+	"github.com/avast/retry-go"
 	"github.com/samber/lo"
 	"strings"
 )
@@ -45,51 +47,57 @@ func NewCreateReleaseHandler() (*CreateReleaseHandler, error) {
 	}, nil
 }
 
+// CreateRelease will attempt to create a release for up to two hours, which takes the standard maintenance window
+// of a cloud hosted instanced into account.
 func (c CreateReleaseHandler) CreateRelease(applicationUpdateMessage models.ApplicationUpdateMessage) error {
+	err := retry.Do(
+		func() error {
+			images, err := c.getImages(applicationUpdateMessage)
 
-	images, err := c.getImages(applicationUpdateMessage)
+			// We can gracefully fall back if the connection back to argo failed
+			if err == nil {
+				applicationUpdateMessage.Images = images
+			} else {
+				applicationUpdateMessage.Images = []string{}
+				c.logger.GetLogger().Error("octoargosync-init-argoappimages: Failed to get the list of images from Argo CD. " +
+					"Verify the ARGOCD_SERVER and ARGOCD_TOKEN environment variables are valid. " +
+					"The Octopus release version will not use any image version. " + err.Error())
+			}
 
-	// We can gracefully fall back if the connection back to argo failed
-	if err == nil {
-		applicationUpdateMessage.Images = images
-	} else {
-		applicationUpdateMessage.Images = []string{}
-		c.logger.GetLogger().Error("octoargosync-init-argoappimages: Failed to get the list of images from Argo CD. " +
-			"Verify the ARGOCD_SERVER and ARGOCD_TOKEN environment variables are valid. " +
-			"The Octopus release version will not use any image version. " + err.Error())
-	}
+			c.logger.GetLogger().Info("Received message from " + applicationUpdateMessage.Application + " in namespace " +
+				applicationUpdateMessage.Namespace + " for SHA " + applicationUpdateMessage.CommitSha + " and release version " +
+				applicationUpdateMessage.TargetRevision + " which includes the images " + strings.Join(applicationUpdateMessage.Images, ","))
 
-	c.logger.GetLogger().Info("Received message from " + applicationUpdateMessage.Application + " in namespace " +
-		applicationUpdateMessage.Namespace + " for SHA " + applicationUpdateMessage.CommitSha + " and release version " +
-		applicationUpdateMessage.TargetRevision + " which includes the images " + strings.Join(applicationUpdateMessage.Images, ","))
+			expandedProjects, err := c.octo.GetProjects(applicationUpdateMessage)
 
-	expandedProjects, err := c.octo.GetProjects(applicationUpdateMessage)
+			if err != nil {
+				return err
+			}
 
-	if err != nil {
-		return err
-	}
+			if len(expandedProjects) == 0 {
+				c.logger.GetLogger().Info("No projects found configured for " + applicationUpdateMessage.Application + " in namespace " + applicationUpdateMessage.Namespace)
+				c.logger.GetLogger().Info("To create releases for this application, add the Metadata.ArgoCD.Application[" +
+					applicationUpdateMessage.Namespace + "/" + applicationUpdateMessage.Application + "].EnvironmentName variable with a value matching the application's environment name, like \"Development\"")
+			}
 
-	if len(expandedProjects) == 0 {
-		c.logger.GetLogger().Info("No projects found configured for " + applicationUpdateMessage.Application + " in namespace " + applicationUpdateMessage.Namespace)
-		c.logger.GetLogger().Info("To create releases for this application, add the Metadata.ArgoCD.Application[" +
-			applicationUpdateMessage.Namespace + "/" + applicationUpdateMessage.Application + "].EnvironmentName variable with a value matching the application's environment name, like \"Development\"")
-	}
+			for _, project := range expandedProjects {
+				version, err := c.versioner.GenerateReleaseVersion(project, applicationUpdateMessage)
 
-	for _, project := range expandedProjects {
-		version, err := c.versioner.GenerateReleaseVersion(project, applicationUpdateMessage)
+				if err != nil {
+					return err
+				}
 
-		if err != nil {
-			return err
-		}
+				err = c.octo.CreateAndDeployRelease(project, applicationUpdateMessage, version)
 
-		err = c.octo.CreateAndDeployRelease(project, applicationUpdateMessage, version)
+				if err != nil {
+					return err
+				}
+			}
 
-		if err != nil {
-			return err
-		}
-	}
+			return nil
+		}, retry_config.HandlerRetryOptions...)
 
-	return nil
+	return err
 }
 
 func (c CreateReleaseHandler) getImages(applicationUpdateMessage models.ApplicationUpdateMessage) ([]string, error) {
