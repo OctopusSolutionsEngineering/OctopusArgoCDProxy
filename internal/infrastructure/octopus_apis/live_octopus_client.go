@@ -1,4 +1,4 @@
-package octopus
+package octopus_apis
 
 import (
 	"context"
@@ -12,11 +12,10 @@ import (
 	"github.com/OctopusDeploy/go-octopusdeploy/v2/pkg/feeds"
 	"github.com/OctopusDeploy/go-octopusdeploy/v2/pkg/releases"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
-	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/logging"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/apploggers"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/retry_config"
 	"github.com/allegro/bigcache/v3"
 	"github.com/avast/retry-go"
-	"github.com/hashicorp/go-multierror"
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 	"net/url"
@@ -36,20 +35,19 @@ var ApplicationImagePackageVersionVariable = regexp.MustCompile("^Metadata.ArgoC
 
 // LiveOctopusClient interacts with a live Octopus API endpoint, and implements caching to reduce network calls.
 type LiveOctopusClient struct {
-	client    *octopusdeploy.Client
-	logger    logging.AppLogger
-	versioner ReleaseVersioner
-	bigCache  *bigcache.BigCache
+	client   *octopusdeploy.Client
+	logger   apploggers.AppLogger
+	bigCache *bigcache.BigCache
 }
 
-func NewLiveOctopusClient(versioner ReleaseVersioner) (*LiveOctopusClient, error) {
+func NewLiveOctopusClient() (*LiveOctopusClient, error) {
 	client, err := getClient()
 
 	if err != nil {
 		return nil, err
 	}
 
-	logger, err := logging.NewDevProdLogger()
+	logger, err := apploggers.NewDevProdLogger()
 
 	if err != nil {
 		return nil, err
@@ -58,10 +56,9 @@ func NewLiveOctopusClient(versioner ReleaseVersioner) (*LiveOctopusClient, error
 	bCache, err := bigcache.New(context.Background(), bigcache.DefaultConfig(5*time.Minute))
 
 	return &LiveOctopusClient{
-		client:    client,
-		logger:    logger,
-		versioner: versioner,
-		bigCache:  bCache,
+		client:   client,
+		logger:   logger,
+		bigCache: bCache,
 	}, nil
 }
 
@@ -150,78 +147,56 @@ func (o *LiveOctopusClient) GetReleaseVersions(projectId string) ([]string, erro
 	return projectReleases, nil
 }
 
-func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.ApplicationUpdateMessage) error {
+func (o *LiveOctopusClient) GetProjects(updateMessage models.ApplicationUpdateMessage) ([]models.ArgoCDProjectExpanded, error) {
 	allProjects, err := o.getAllProjectAndVariables()
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	projects, err := o.getProjectsMatchingArgoCDApplication(allProjects, updateMessage.Application, updateMessage.Namespace)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	expandedProjects, err := o.expandProjectReferences(projects)
+	return o.expandProjectReferences(projects)
+}
+
+func (o *LiveOctopusClient) CreateAndDeployRelease(project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage, version string) error {
+
+	err := o.validateLifecycle(project.Lifecycle, project.Environment)
 
 	if err != nil {
 		return err
 	}
 
-	if len(expandedProjects) == 0 {
-		o.logger.GetLogger().Info("No projects found configured for " + updateMessage.Application + " in namespace " + updateMessage.Namespace)
-		o.logger.GetLogger().Info("To create releases for this application, add the Metadata.ArgoCD.Application[" +
-			updateMessage.Namespace + "/" + updateMessage.Application + "].EnvironmentName variable with a value matching the application's environment name, like \"Development\"")
+	release, newRelease, err := o.getRelease(project, version, project.Channel.ID, updateMessage)
+
+	if err != nil {
+		return err
 	}
 
-	var result error
-
-	for _, project := range expandedProjects {
-
-		err = o.validateLifecycle(project.Lifecycle, project.Environment)
-
-		if err != nil {
-			result = multierror.Append(result, err)
-			continue
-		}
-
-		version, err := o.versioner.GenerateReleaseVersion(o, project, updateMessage)
-
-		if err != nil {
-			result = multierror.Append(result, err)
-			continue
-		}
-
-		release, newRelease, err := o.getRelease(project, version, project.Channel.ID, updateMessage)
-
-		if err != nil {
-			result = multierror.Append(result, err)
-			continue
-		}
-
-		if newRelease && slices.Index(project.Lifecycle.Phases[0].AutomaticDeploymentTargets, project.Environment.ID) != -1 {
-			o.logger.GetLogger().Info("Created release " + release.ID + " with version " + version + " for project " + project.Project.Name)
-			o.logger.GetLogger().Info("The environment " + project.Environment.Name + " is an automatic deployment target in the first phase, so Octopus will automatically deploy the release")
-			continue
-		}
-
-		deployment := octopusdeploy.NewDeployment(project.Environment.ID, release.ID)
-		deployment, err = o.client.Deployments.Add(deployment)
-
-		if err != nil {
-			result = multierror.Append(result, err)
-			continue
-		}
-
-		o.logger.GetLogger().Info("Created release " + release.ID + " with version " + version + " and deployment " + deployment.ID +
-			" in environment " + project.Environment.Name + " for project " + project.Project.Name)
+	if newRelease && slices.Index(project.Lifecycle.Phases[0].AutomaticDeploymentTargets, project.Environment.ID) != -1 {
+		o.logger.GetLogger().Info("Created release " + release.ID + " with version " + version + " for project " + project.Project.Name)
+		o.logger.GetLogger().Info("The environment " + project.Environment.Name + " is an automatic deployment target in the first phase, so Octopus will automatically deploy the release")
+		return nil
 	}
 
-	return err
+	deployment := octopusdeploy.NewDeployment(project.Environment.ID, release.ID)
+	deployment, err = o.client.Deployments.Add(deployment)
+
+	if err != nil {
+		return err
+	}
+
+	o.logger.GetLogger().Info("Created release " + release.ID + " with version " + version + " and deployment " + deployment.ID +
+		" in environment " + project.Environment.Name + " for project " + project.Project.Name)
+
+	return nil
 }
 
-// getClient2 returns a client for the version 2 octopus go library
+// getClient2 returns a client for the version 2 octopus_apis go library
 func getClient2() (*octopusApiClient.Client, error) {
 	if os.Getenv("OCTOPUS_SERVER") == "" {
 		return nil, errors.New("octoargosync-init-octoclienterror - OCTOPUS_SERVER must be defined")
@@ -246,7 +221,7 @@ func getClient2() (*octopusApiClient.Client, error) {
 	return client, nil
 }
 
-// getClient returns a client for the version 1 octopus go library
+// getClient returns a client for the version 1 octopus_apis go library
 func getClient() (*octopusdeploy.Client, error) {
 	if os.Getenv("OCTOPUS_SERVER") == "" {
 		return nil, errors.New("octoargosync-init-octoclienterror - OCTOPUS_SERVER must be defined")
@@ -464,7 +439,7 @@ func (o *LiveOctopusClient) overridePackageSelections(defaultPackages []*octopus
 	})
 }
 
-// expandProjectReferences maps a project to the octopus resources noted in the metadata variables
+// expandProjectReferences maps a project to the octopus_apis resources noted in the metadata variables
 func (o *LiveOctopusClient) expandProjectReferences(projects []models.ArgoCDProject) ([]models.ArgoCDProjectExpanded, error) {
 	expandedProjects := []models.ArgoCDProjectExpanded{}
 	for _, project := range projects {
@@ -876,7 +851,7 @@ func (o *LiveOctopusClient) getEnvironment(environmentName string) (*octopusdepl
 // buildPackageVersionBaseline has been shamelessly lifted from https://github.com/OctopusDeploy/cli
 func (o *LiveOctopusClient) buildPackageVersionBaseline(octopus *octopusApiClient.Client, deploymentProcessTemplate *deployments.DeploymentProcessTemplate, channel *channels.Channel) ([]*octopusdeploy.SelectedPackage, error) {
 	if octopus == nil {
-		return nil, errors.New("octopus can not be nil")
+		return nil, errors.New("octopus_apis can not be nil")
 	}
 
 	if deploymentProcessTemplate == nil {
@@ -958,7 +933,7 @@ func (o *LiveOctopusClient) buildPackageVersionBaseline(octopus *octopusApiClien
 						// this rule applies to our step/packageref combo
 						query.PreReleaseTag = rule.Tag
 						query.VersionRange = rule.VersionRange
-						// the octopus server won't let the same package be targeted by more than one rule, so
+						// the octopus_apis server won't let the same package be targeted by more than one rule, so
 						// once we've found the first matching rule for our step+package, we can stop looping
 						break rulesLoop
 					}

@@ -1,10 +1,10 @@
-package versioning
+package versioners
 
 import (
 	"fmt"
 	"github.com/Masterminds/semver/v3"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
-	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/octopus"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/octopus_apis"
 	"github.com/samber/lo"
 	"k8s.io/utils/strings/slices"
 	"sort"
@@ -17,7 +17,7 @@ type SimpleVersioner struct {
 
 // GenerateReleaseVersion will use the target revision, then a matching image version, then a git sha. It uses semver metadata
 // to ensure release versions are unique, treating redeployments as unique releases.
-func (o *SimpleVersioner) GenerateReleaseVersion(octo octopus.OctopusClient, project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (string, error) {
+func (o *SimpleVersioner) GenerateReleaseVersion(octo octopus_apis.OctopusClient, project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (string, error) {
 
 	fallbackVersion := time.Now().Format("2006.01.02.150405")
 

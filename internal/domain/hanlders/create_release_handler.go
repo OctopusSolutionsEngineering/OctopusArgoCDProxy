@@ -2,36 +2,36 @@ package hanlders
 
 import (
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
-	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/versioning"
-	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/argocd"
-	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/logging"
-	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/octopus"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/versioners"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/apploggers"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/argocd_apis"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/octopus_apis"
 	"github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
 	"github.com/samber/lo"
 	"strings"
 )
 
 type CreateReleaseHandler struct {
-	logger    logging.AppLogger
-	octo      octopus.OctopusClient
-	argo      *argocd.Client
-	versioner octopus.ReleaseVersioner
+	logger    apploggers.AppLogger
+	octo      octopus_apis.OctopusClient
+	argo      *argocd_apis.ArgoCDClient
+	versioner versioners.ReleaseVersioner
 }
 
 func NewCreateReleaseHandler() (*CreateReleaseHandler, error) {
-	logger, err := logging.NewDevProdLogger()
+	logger, err := apploggers.NewDevProdLogger()
 
 	if err != nil {
 		return nil, err
 	}
 
-	octo, err := octopus.NewLiveOctopusClient(&versioning.SimpleRedeploymentVersioner{})
+	octo, err := octopus_apis.NewLiveOctopusClient()
 
 	if err != nil {
 		return nil, err
 	}
 
-	argocdClient, err := argocd.NewClient()
+	argocdClient, err := argocd_apis.NewClient()
 
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func NewCreateReleaseHandler() (*CreateReleaseHandler, error) {
 		logger:    logger,
 		octo:      octo,
 		argo:      argocdClient,
-		versioner: &versioning.DefaultVersioner{},
+		versioner: &versioners.DefaultVersioner{},
 	}, nil
 }
 
@@ -63,10 +63,30 @@ func (c CreateReleaseHandler) CreateRelease(applicationUpdateMessage models.Appl
 		applicationUpdateMessage.Namespace + " for SHA " + applicationUpdateMessage.CommitSha + " and release version " +
 		applicationUpdateMessage.TargetRevision + " which includes the images " + strings.Join(applicationUpdateMessage.Images, ","))
 
-	err = c.octo.CreateAndDeployRelease(applicationUpdateMessage)
+	expandedProjects, err := c.octo.GetProjects(applicationUpdateMessage)
 
 	if err != nil {
 		return err
+	}
+
+	if len(expandedProjects) == 0 {
+		c.logger.GetLogger().Info("No projects found configured for " + applicationUpdateMessage.Application + " in namespace " + applicationUpdateMessage.Namespace)
+		c.logger.GetLogger().Info("To create releases for this application, add the Metadata.ArgoCD.Application[" +
+			applicationUpdateMessage.Namespace + "/" + applicationUpdateMessage.Application + "].EnvironmentName variable with a value matching the application's environment name, like \"Development\"")
+	}
+
+	for _, project := range expandedProjects {
+		version, err := c.versioner.GenerateReleaseVersion(c.octo, project, applicationUpdateMessage)
+
+		if err != nil {
+			return err
+		}
+
+		err = c.octo.CreateAndDeployRelease(project, applicationUpdateMessage, version)
+
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

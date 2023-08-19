@@ -1,4 +1,4 @@
-package argocd
+package argocd_apis
 
 import (
 	"context"
@@ -15,13 +15,14 @@ import (
 	"github.com/argoproj/argo-cd/v2/pkg/apiclient/project"
 )
 
-type Client struct {
+// ArgoCDClient provides access to the ArgoCD API
+type ArgoCDClient struct {
 	projectClient     project.ProjectServiceClient
 	clusterClient     cluster.ClusterServiceClient
 	applicationClient application.ApplicationServiceClient
 }
 
-func NewClient() (*Client, error) {
+func NewClient() (*ArgoCDClient, error) {
 	if os.Getenv("ARGOCD_SERVER") == "" {
 		return nil, errors.New("ARGOCD_SERVER must be defined")
 	}
@@ -54,14 +55,14 @@ func NewClient() (*Client, error) {
 		return nil, err
 	}
 
-	return &Client{
+	return &ArgoCDClient{
 		projectClient:     projectClient,
 		clusterClient:     clusterClient,
 		applicationClient: applicationClient,
 	}, nil
 }
 
-func (c *Client) GetClusters() ([]v1alpha1.Cluster, error) {
+func (c *ArgoCDClient) GetClusters() ([]v1alpha1.Cluster, error) {
 	var cl *v1alpha1.ClusterList
 	err := retry.Do(
 		func() error {
@@ -76,7 +77,7 @@ func (c *Client) GetClusters() ([]v1alpha1.Cluster, error) {
 	return cl.Items, nil
 }
 
-func (c *Client) GetProject(name string) (*v1alpha1.AppProject, error) {
+func (c *ArgoCDClient) GetProject(name string) (*v1alpha1.AppProject, error) {
 	var appProject *v1alpha1.AppProject
 	err := retry.Do(
 		func() error {
@@ -90,7 +91,7 @@ func (c *Client) GetProject(name string) (*v1alpha1.AppProject, error) {
 	return appProject, err
 }
 
-func (c *Client) GetApplication(name string, namespace string) (*v1alpha1.Application, error) {
+func (c *ArgoCDClient) GetApplication(name string, namespace string) (*v1alpha1.Application, error) {
 	var argoApplication *v1alpha1.Application
 	err := retry.Do(
 		func() error {
@@ -105,7 +106,7 @@ func (c *Client) GetApplication(name string, namespace string) (*v1alpha1.Applic
 	return argoApplication, err
 }
 
-func (c *Client) GetApplicationResourceTree(name string, namespace string) (*v1alpha1.ApplicationTree, error) {
+func (c *ArgoCDClient) GetApplicationResourceTree(name string, namespace string) (*v1alpha1.ApplicationTree, error) {
 	var resourceTree *v1alpha1.ApplicationTree
 	err := retry.Do(
 		func() error {

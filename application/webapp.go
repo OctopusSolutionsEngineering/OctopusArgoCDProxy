@@ -5,7 +5,7 @@ import (
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/hanlders"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/jsonex"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
-	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/logging"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/apploggers"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"os"
@@ -28,7 +28,7 @@ func main() {
 }
 
 func start(createReleaseHandler *hanlders.CreateReleaseHandler) error {
-	logger, err := logging.NewDevProdLogger()
+	logger, err := apploggers.NewDevProdLogger()
 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())

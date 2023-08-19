@@ -2,6 +2,7 @@ package models
 
 import "github.com/OctopusDeploy/go-octopusdeploy/octopusdeploy"
 
+// ImagePackageVersion matches an ArgoCD image to an Octopus package reference.
 type ImagePackageVersion struct {
 	Image            string
 	PackageReference string

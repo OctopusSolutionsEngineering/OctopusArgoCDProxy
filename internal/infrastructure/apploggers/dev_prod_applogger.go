@@ -1,4 +1,4 @@
-package logging
+package apploggers
 
 import (
 	"go.uber.org/zap"
@@ -6,13 +6,13 @@ import (
 	"strings"
 )
 
-// DevProdLogger provides logging facilities that can be configured via the APP_ENV environment variable
-type DevProdLogger struct {
+// DevProdAppLogger provides apploggers facilities that can be configured via the APP_ENV environment variable
+type DevProdAppLogger struct {
 	log *zap.Logger
 }
 
-func NewDevProdLogger() (*DevProdLogger, error) {
-	logger := DevProdLogger{}
+func NewDevProdLogger() (*DevProdAppLogger, error) {
+	logger := DevProdAppLogger{}
 
 	if strings.ToLower(os.Getenv("APP_ENV")) == "production" {
 		log, err := zap.NewProduction()
@@ -35,6 +35,6 @@ func NewDevProdLogger() (*DevProdLogger, error) {
 	return &logger, nil
 }
 
-func (d *DevProdLogger) GetLogger() *zap.Logger {
+func (d *DevProdAppLogger) GetLogger() *zap.Logger {
 	return d.log
 }
