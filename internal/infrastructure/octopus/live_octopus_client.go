@@ -210,7 +210,6 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.Applicat
 
 		o.logger.GetLogger().Info("Created release " + release.ID + " with version " + version + " and deployment " + deployment.ID +
 			" in environment " + project.Environment.Name + " for project " + project.Project.Name)
-
 	}
 
 	return err
@@ -266,8 +265,7 @@ func getClient() (*octopusdeploy.Client, error) {
 	return client, nil
 }
 
-// getArgoCdChannel returns the default channel if no channel was indicated on the project, otherwise the specific
-// channel is returned.
+// getArgoCdChannel returns the default channel if no channel was indicated on the project, otherwise the specific channel is returned.
 func (o *LiveOctopusClient) getArgoCdChannel(project models.ArgoCDProject) (*octopusdeploy.Channel, error) {
 	if project.ChannelName != "" {
 		return o.getChannel(project.Project, project.ChannelName)
