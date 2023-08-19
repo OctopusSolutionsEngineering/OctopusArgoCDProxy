@@ -12,6 +12,7 @@ import (
 	"github.com/OctopusDeploy/go-octopusdeploy/v2/pkg/feeds"
 	"github.com/OctopusDeploy/go-octopusdeploy/v2/pkg/releases"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/types"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/apploggers"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/retry_config"
 	"github.com/allegro/bigcache/v3"
@@ -62,7 +63,7 @@ func NewLiveOctopusClient() (*LiveOctopusClient, error) {
 	}, nil
 }
 
-func (o *LiveOctopusClient) IsDeployed(projectId string, releaseVersion string, environmentName string) (bool, error) {
+func (o *LiveOctopusClient) IsDeployed(project *octopusdeploy.Project, releaseVersion types.OctopusReleaseVersion, environment *octopusdeploy.Environment) (bool, error) {
 	var octopusReleases *octopusdeploy.Releases
 	err := retry.Do(
 		func() error {
@@ -82,7 +83,7 @@ func (o *LiveOctopusClient) IsDeployed(projectId string, releaseVersion string, 
 	}
 
 	projectReleases := lo.Filter(octopusReleases.Items, func(item *octopusdeploy.Release, index int) bool {
-		return item.ProjectID == projectId && item.Version == releaseVersion
+		return item.ProjectID == project.ID && item.Version == fmt.Sprint(releaseVersion)
 	})
 
 	if len(projectReleases) == 0 {
@@ -108,12 +109,6 @@ func (o *LiveOctopusClient) IsDeployed(projectId string, releaseVersion string, 
 		return false, nil
 	}
 
-	environment, err := o.getEnvironment(environmentName)
-
-	if err != nil {
-		return false, err
-	}
-
 	environmentDeployments := lo.Filter(octopusDeployments.Items, func(item *octopusdeploy.Deployment, index int) bool {
 		return item.EnvironmentID == environment.ID
 	})
@@ -121,7 +116,7 @@ func (o *LiveOctopusClient) IsDeployed(projectId string, releaseVersion string, 
 	return len(environmentDeployments) != 0, nil
 }
 
-func (o *LiveOctopusClient) GetReleaseVersions(projectId string) ([]string, error) {
+func (o *LiveOctopusClient) GetReleaseVersions(project *octopusdeploy.Project) ([]types.OctopusReleaseVersion, error) {
 
 	var octopusReleases *octopusdeploy.Releases
 	err := retry.Do(
@@ -140,8 +135,8 @@ func (o *LiveOctopusClient) GetReleaseVersions(projectId string) ([]string, erro
 		return nil, err
 	}
 
-	projectReleases := lo.FilterMap(octopusReleases.Items, func(item *octopusdeploy.Release, index int) (string, bool) {
-		return item.Version, item.ProjectID == projectId
+	projectReleases := lo.FilterMap(octopusReleases.Items, func(item *octopusdeploy.Release, index int) (types.OctopusReleaseVersion, bool) {
+		return types.OctopusReleaseVersion(item.Version), item.ProjectID == project.ID
 	})
 
 	return projectReleases, nil
@@ -163,7 +158,7 @@ func (o *LiveOctopusClient) GetProjects(updateMessage models.ApplicationUpdateMe
 	return o.expandProjectReferences(projects)
 }
 
-func (o *LiveOctopusClient) CreateAndDeployRelease(project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage, version string) error {
+func (o *LiveOctopusClient) CreateAndDeployRelease(project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage, version types.OctopusReleaseVersion) error {
 
 	err := o.validateLifecycle(project.Lifecycle, project.Environment)
 
@@ -178,7 +173,7 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(project models.ArgoCDProjectE
 	}
 
 	if newRelease && slices.Index(project.Lifecycle.Phases[0].AutomaticDeploymentTargets, project.Environment.ID) != -1 {
-		o.logger.GetLogger().Info("Created release " + release.ID + " with version " + version + " for project " + project.Project.Name)
+		o.logger.GetLogger().Info("Created release " + release.ID + " with version " + fmt.Sprint(version) + " for project " + project.Project.Name)
 		o.logger.GetLogger().Info("The environment " + project.Environment.Name + " is an automatic deployment target in the first phase, so Octopus will automatically deploy the release")
 		return nil
 	}
@@ -190,7 +185,7 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(project models.ArgoCDProjectE
 		return err
 	}
 
-	o.logger.GetLogger().Info("Created release " + release.ID + " with version " + version + " and deployment " + deployment.ID +
+	o.logger.GetLogger().Info("Created release " + release.ID + " with version " + fmt.Sprint(version) + " and deployment " + deployment.ID +
 		" in environment " + project.Environment.Name + " for project " + project.Project.Name)
 
 	return nil
@@ -360,7 +355,7 @@ func (o *LiveOctopusClient) getPackages(project models.ArgoCDProjectExpanded, up
 }
 
 // getRelease finds the release for a given version in a project, or it creates a new release.
-func (o *LiveOctopusClient) getRelease(project models.ArgoCDProjectExpanded, version string, channelId string, updateMessage models.ApplicationUpdateMessage) (*octopusdeploy.Release, bool, error) {
+func (o *LiveOctopusClient) getRelease(project models.ArgoCDProjectExpanded, version types.OctopusReleaseVersion, channelId string, updateMessage models.ApplicationUpdateMessage) (*octopusdeploy.Release, bool, error) {
 	var octopusReleases *octopusdeploy.Releases
 	err := retry.Do(
 		func() error {
@@ -379,7 +374,7 @@ func (o *LiveOctopusClient) getRelease(project models.ArgoCDProjectExpanded, ver
 	}
 
 	existingReleases := lo.Filter(octopusReleases.Items, func(item *octopusdeploy.Release, index int) bool {
-		return item.ProjectID == project.Project.ID && item.Version == version
+		return item.ProjectID == project.Project.ID && item.Version == fmt.Sprint(version)
 	})
 
 	// Get the package versions that are mapped by the project metadata
@@ -403,7 +398,7 @@ func (o *LiveOctopusClient) getRelease(project models.ArgoCDProjectExpanded, ver
 		release := &octopusdeploy.Release{
 			ChannelID:        channelId,
 			ProjectID:        project.Project.ID,
-			Version:          version,
+			Version:          fmt.Sprint(version),
 			SelectedPackages: finalPackages,
 		}
 

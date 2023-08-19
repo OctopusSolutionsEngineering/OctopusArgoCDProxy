@@ -3,6 +3,7 @@ package versioners
 import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/types"
 	"github.com/samber/lo"
 	"sort"
 	"strings"
@@ -14,7 +15,7 @@ type DefaultVersioner struct {
 
 // GenerateReleaseVersion will use the target revision, then a matching image version, then a git sha, then just a timestamp
 // to generate the release version.
-func (o *DefaultVersioner) GenerateReleaseVersion(project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (string, error) {
+func (o *DefaultVersioner) GenerateReleaseVersion(project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (types.OctopusReleaseVersion, error) {
 	timestamp := time.Now().Format("20060102150405")
 
 	sha := strings.TrimSpace(updateMessage.CommitSha)
@@ -28,7 +29,7 @@ func (o *DefaultVersioner) GenerateReleaseVersion(project models.ArgoCDProjectEx
 
 	// the target revision is a useful version
 	if len(Semver.FindStringSubmatch(updateMessage.TargetRevision)) != 0 {
-		return updateMessage.TargetRevision + "-" + timestamp, nil
+		return types.OctopusReleaseVersion(updateMessage.TargetRevision + "-" + timestamp), nil
 	}
 
 	// There is an image version we want to use
@@ -58,15 +59,15 @@ func (o *DefaultVersioner) GenerateReleaseVersion(project models.ArgoCDProjectEx
 		})
 
 		if len(versions) != 0 {
-			return versions[0] + "-" + timestamp + shaSuffix, nil
+			return types.OctopusReleaseVersion(versions[0] + "-" + timestamp + shaSuffix), nil
 		}
 	}
 
 	// There is a SHA, add it
 	if shaSuffix != "" {
-		return timestamp + shaSuffix, nil
+		return types.OctopusReleaseVersion(timestamp + shaSuffix), nil
 	}
 
 	// if all else fails, use a date ver
-	return time.Now().Format("2006.01.02.150405"), nil
+	return types.OctopusReleaseVersion(time.Now().Format("2006.01.02.150405")), nil
 }

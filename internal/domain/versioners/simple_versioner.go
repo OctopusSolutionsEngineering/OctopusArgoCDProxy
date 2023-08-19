@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"github.com/Masterminds/semver/v3"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/types"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/octopus_apis"
 	"github.com/samber/lo"
-	"k8s.io/utils/strings/slices"
+	"golang.org/x/exp/slices"
 	"sort"
 	"strings"
 	"time"
@@ -24,11 +25,11 @@ func NewSimpleVersioner(octo octopus_apis.OctopusClient) SimpleVersioner {
 
 // GenerateReleaseVersion will use the target revision, then a matching image version, then a git sha. It uses semver metadata
 // to ensure release versions are unique, treating redeployments as unique releases.
-func (o *SimpleVersioner) GenerateReleaseVersion(project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (string, error) {
+func (o *SimpleVersioner) GenerateReleaseVersion(project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (types.OctopusReleaseVersion, error) {
 
 	fallbackVersion := time.Now().Format("2006.01.02.150405")
 
-	releases, err := o.octo.GetReleaseVersions(project.Project.ID)
+	releases, err := o.octo.GetReleaseVersions(project.Project)
 
 	if err != nil {
 		return "", err
@@ -36,9 +37,9 @@ func (o *SimpleVersioner) GenerateReleaseVersion(project models.ArgoCDProjectExp
 
 	// the target revision is a useful version
 	if len(Semver.FindStringSubmatch(updateMessage.TargetRevision)) != 0 {
-		version := updateMessage.TargetRevision
+		version := types.OctopusReleaseVersion(updateMessage.TargetRevision)
 
-		isDeployed, err := o.octo.IsDeployed(project.Project.ID, version, project.Environment.Name)
+		isDeployed, err := o.octo.IsDeployed(project.Project, version, project.Environment)
 
 		if err != nil {
 			return "", err
@@ -49,33 +50,33 @@ func (o *SimpleVersioner) GenerateReleaseVersion(project models.ArgoCDProjectExp
 		}
 
 		if slices.Index(releases, version) == -1 {
-			return updateMessage.TargetRevision, nil
+			return types.OctopusReleaseVersion(updateMessage.TargetRevision), nil
 		}
 
 		for count := 2; count < 1000; count++ {
-			thisVersion := version + "+deployment" + fmt.Sprint(count)
+			thisVersion := types.OctopusReleaseVersion(fmt.Sprint(version) + "+deployment" + fmt.Sprint(count))
 			if slices.Index(releases, thisVersion) == -1 {
 				return thisVersion, nil
 			}
 		}
 
-		return time.Now().Format("20060102150405"), nil
+		return types.OctopusReleaseVersion(time.Now().Format("20060102150405")), nil
 	}
 
 	// There is an image version we want to use
 	if project.ReleaseVersionImage != "" {
-		versions := lo.FilterMap(updateMessage.Images, func(item string, index int) (string, bool) {
+		versions := lo.FilterMap(updateMessage.Images, func(item string, index int) (types.OctopusReleaseVersion, bool) {
 			split := strings.Split(item, ":")
 			if len(split) == 2 && split[0] == project.ReleaseVersionImage {
-				return split[1], true
+				return types.OctopusReleaseVersion(split[1]), true
 			}
 
 			return "", false
 		})
 
 		sort.SliceStable(versions, func(a, b int) bool {
-			v1, err1 := semver.NewVersion(versions[a])
-			v2, err2 := semver.NewVersion(versions[b])
+			v1, err1 := semver.NewVersion(string(versions[a]))
+			v2, err2 := semver.NewVersion(string(versions[b]))
 
 			if err1 == nil && err2 == nil {
 				return v1.Compare(v2) > 0
@@ -92,7 +93,7 @@ func (o *SimpleVersioner) GenerateReleaseVersion(project models.ArgoCDProjectExp
 
 			version := versions[0]
 
-			isDeployed, err := o.octo.IsDeployed(project.Project.ID, version, project.Environment.Name)
+			isDeployed, err := o.octo.IsDeployed(project.Project, version, project.Environment)
 
 			if err != nil {
 				return "", err
@@ -103,16 +104,16 @@ func (o *SimpleVersioner) GenerateReleaseVersion(project models.ArgoCDProjectExp
 			}
 
 			for count := 2; count < 1000; count++ {
-				thisVersion := version + "+deployment" + fmt.Sprint(count)
+				thisVersion := types.OctopusReleaseVersion(string(version) + "+deployment" + fmt.Sprint(count))
 				if slices.Index(releases, thisVersion) == -1 {
 					return thisVersion, nil
 				}
 			}
 
-			return time.Now().Format("20060102150405"), nil
+			return types.OctopusReleaseVersion(time.Now().Format("20060102150405")), nil
 		}
 	}
 
 	// if all else fails, use a date ver
-	return fallbackVersion, nil
+	return types.OctopusReleaseVersion(fallbackVersion), nil
 }

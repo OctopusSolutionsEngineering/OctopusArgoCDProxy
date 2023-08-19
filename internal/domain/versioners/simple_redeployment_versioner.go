@@ -3,6 +3,7 @@ package versioners
 import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
+	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/types"
 	"github.com/samber/lo"
 	"sort"
 	"strings"
@@ -14,14 +15,14 @@ type SimpleRedeploymentVersioner struct {
 
 // GenerateReleaseVersion extracts the version from the target revision or the image version. It pays no attention
 // to existing releases, meaning redeployments from Argo trigger redeployemnts in Octopus.
-func (o *SimpleRedeploymentVersioner) GenerateReleaseVersion(project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (string, error) {
+func (o *SimpleRedeploymentVersioner) GenerateReleaseVersion(project models.ArgoCDProjectExpanded, updateMessage models.ApplicationUpdateMessage) (types.OctopusReleaseVersion, error) {
 
 	fallbackVersion := time.Now().Format("2006.01.02.150405")
 
 	// the target revision is a useful version
 	_, err := semver.NewVersion(updateMessage.TargetRevision)
 	if err == nil {
-		return updateMessage.TargetRevision, nil
+		return types.OctopusReleaseVersion(updateMessage.TargetRevision), nil
 	}
 
 	// There is an image version we want to use
@@ -52,10 +53,10 @@ func (o *SimpleRedeploymentVersioner) GenerateReleaseVersion(project models.Argo
 
 		if len(versions) != 0 {
 
-			return versions[0], nil
+			return types.OctopusReleaseVersion(versions[0]), nil
 		}
 	}
 
 	// if all else fails, use a date ver
-	return fallbackVersion, nil
+	return types.OctopusReleaseVersion(fallbackVersion), nil
 }
