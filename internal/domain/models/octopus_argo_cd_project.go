@@ -7,8 +7,9 @@ type ImagePackageVersion struct {
 	PackageReference string
 }
 
-// OctopusProjectAndVars maps a project to its variables. This object is mapped to a ArgoCDProject
-// as the important variables are extracted.
+// OctopusProjectAndVars maps a project to its variables. The variables are then scanned for the metadata variables
+// this proxy uses to map ArgoCD applications to Octopus projects. Matching projects are then mapped to a ArgoCDProject
+// with the important variables extracted as properties.
 type OctopusProjectAndVars struct {
 	Project   *octopusdeploy.Project
 	Variables *octopusdeploy.VariableSet

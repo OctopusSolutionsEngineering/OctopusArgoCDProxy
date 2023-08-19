@@ -151,13 +151,19 @@ func (o *LiveOctopusClient) GetReleaseVersions(projectId string) ([]string, erro
 }
 
 func (o *LiveOctopusClient) CreateAndDeployRelease(updateMessage models.ApplicationUpdateMessage) error {
-	projects, err := o.getProject(updateMessage.Application, updateMessage.Namespace)
+	allProjects, err := o.getAllProjectAndVariables()
 
 	if err != nil {
 		return err
 	}
 
-	expandedProjects, err := o.expandProjects(projects)
+	projects, err := o.getProjectsMatchingArgoCDApplication(allProjects, updateMessage.Application, updateMessage.Namespace)
+
+	if err != nil {
+		return err
+	}
+
+	expandedProjects, err := o.expandProjectReferences(projects)
 
 	if err != nil {
 		return err
@@ -458,8 +464,8 @@ func (o *LiveOctopusClient) overridePackageSelections(defaultPackages []*octopus
 	})
 }
 
-// expandProjects maps a project to the octopus resources noted in the metadata variables
-func (o *LiveOctopusClient) expandProjects(projects []models.ArgoCDProject) ([]models.ArgoCDProjectExpanded, error) {
+// expandProjectReferences maps a project to the octopus resources noted in the metadata variables
+func (o *LiveOctopusClient) expandProjectReferences(projects []models.ArgoCDProject) ([]models.ArgoCDProjectExpanded, error) {
 	expandedProjects := []models.ArgoCDProjectExpanded{}
 	for _, project := range projects {
 		environment, err := o.getEnvironment(project.EnvironmentName)
@@ -493,16 +499,10 @@ func (o *LiveOctopusClient) expandProjects(projects []models.ArgoCDProject) ([]m
 	return expandedProjects, nil
 }
 
-// getProject scans Octopus for the project that has been linked to the Argo CD Application and namespace
-func (o *LiveOctopusClient) getProject(application string, namespace string) ([]models.ArgoCDProject, error) {
+// getProjectsMatchingArgoCDApplication scans Octopus for the project that has been linked to the Argo CD Application and namespace
+func (o *LiveOctopusClient) getProjectsMatchingArgoCDApplication(allProjects []models.OctopusProjectAndVars, application string, namespace string) ([]models.ArgoCDProject, error) {
 
-	projects, err := o.getAllProject()
-
-	if err != nil {
-		return nil, err
-	}
-
-	matchingProjects := lo.FilterMap(projects, func(project models.OctopusProjectAndVars, index int) (models.ArgoCDProject, bool) {
+	matchingProjects := lo.FilterMap(allProjects, func(project models.OctopusProjectAndVars, index int) (models.ArgoCDProject, bool) {
 		appNameEnvironments := lo.FilterMap(project.Variables.Variables, func(variable *octopusdeploy.Variable, index int) (string, bool) {
 			match := ApplicationEnvironmentVariable.FindStringSubmatch(variable.Name)
 
@@ -610,7 +610,7 @@ func (o *LiveOctopusClient) getProjectVariables(projectId string) (*octopusdeplo
 	return variables, nil
 }
 
-func (o *LiveOctopusClient) getAllProject() ([]models.OctopusProjectAndVars, error) {
+func (o *LiveOctopusClient) getAllProjectAndVariables() ([]models.OctopusProjectAndVars, error) {
 	// Load projects, and cache the results
 	octopusProjects := &octopusdeploy.Projects{}
 	projectsData, err := o.bigCache.Get("AllProjects")
