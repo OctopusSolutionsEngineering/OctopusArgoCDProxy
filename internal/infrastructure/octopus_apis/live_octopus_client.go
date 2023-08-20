@@ -64,17 +64,11 @@ func NewLiveOctopusClient() (*LiveOctopusClient, error) {
 }
 
 func (o *LiveOctopusClient) IsDeployed(project *octopusdeploy.Project, releaseVersion types.OctopusReleaseVersion, environment *octopusdeploy.Environment) (bool, error) {
-	var octopusReleases *octopusdeploy.Releases
+	var octopusReleases []*octopusdeploy.Release
 	err := retry.Do(
 		func() error {
 			var err error
-			octopusReleases, err = o.client.Releases.Get(octopusdeploy.ReleasesQuery{
-				IDs:                nil,
-				IgnoreChannelRules: false,
-				Skip:               0,
-				Take:               10000,
-			})
-
+			octopusReleases, err = o.client.Projects.GetReleases(project)
 			return err
 		}, retry_config.RetryOptions...)
 
@@ -82,8 +76,8 @@ func (o *LiveOctopusClient) IsDeployed(project *octopusdeploy.Project, releaseVe
 		return false, err
 	}
 
-	projectReleases := lo.Filter(octopusReleases.Items, func(item *octopusdeploy.Release, index int) bool {
-		return item.ProjectID == project.ID && item.Version == fmt.Sprint(releaseVersion)
+	projectReleases := lo.Filter(octopusReleases, func(item *octopusdeploy.Release, index int) bool {
+		return item.Version == fmt.Sprint(releaseVersion)
 	})
 
 	if len(projectReleases) == 0 {
