@@ -1,5 +1,7 @@
 This is a proxy designed to accept ArgoCD triggers and use them to create released releases and deployments in an Octopus instance.
 
+# Proxy YAML
+
 The proxy is deployed with the following resoutces:
 
 ```yaml
@@ -58,7 +60,12 @@ spec:
 
 ```
 
+# Project Variables
+
 The proxy scans projects in the configured space for known variables that map an Octopus project to an ArgoCD project. 
+This allows Octopus projects to register themselves to have releases and deployments created in response to
+ArgoCD Application updates, and removes the need for the proxy to maintain a static list of projects.
+
 In the variable names below, `namespace` must be replaced with the namespace hosting an ArgoCD Application, and 
 `applicationname` must be replaced with the Application name:
 
@@ -67,6 +74,17 @@ In the variable names below, `namespace` must be replaced with the namespace hos
 * `Metadata.ArgoCD.Application[namespace/applicationname].ImageForPackageVersion[actionname:packagename]` - Set the value to a Docker image included in an ArgoCD Application. This sets the value of the package defined in the action called `actioname` with the name `packagename` to the version of the linked image tag.
 
 ![image](https://github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/assets/160104/106f7811-0d47-4a81-a7a0-d96382bd855b)
+
+# Lifecycles
+
+The Octopus projects triggered by the proxy should typically be configured with a lifecycle with a single phase that contains all environments.
+This is because ArgoCD has no concept of environment progression and can essentially deploy a new version of an Application in any
+environment at any time. A lifecycle with a single phase containing all environments allows Octopus to create deployments in any environment.
+
+![image](https://github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/assets/160104/a7ba9185-934e-4ddf-89da-ee17b55aa4b4)
+
+
+# ArgoCD Triggers
 
 Triggers are configured in the `argocd-notifications-cm` ConfigMap:
 ```
