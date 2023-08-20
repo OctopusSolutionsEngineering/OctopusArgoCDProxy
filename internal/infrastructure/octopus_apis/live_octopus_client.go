@@ -218,7 +218,7 @@ func (o *LiveOctopusClient) CreateAndDeployRelease(project models.ArgoCDProjectE
 		return err
 	}
 
-	release, newRelease, err := o.getRelease(project, version, project.Channel.ID, updateMessage)
+	release, newRelease, err := o.getRelease(project, version, project.Channel, updateMessage)
 
 	if err != nil {
 		return err
@@ -407,7 +407,7 @@ func (o *LiveOctopusClient) getPackages(project models.ArgoCDProjectExpanded, up
 }
 
 // getRelease finds the release for a given version in a project, or it creates a new release.
-func (o *LiveOctopusClient) getRelease(project models.ArgoCDProjectExpanded, version types.OctopusReleaseVersion, channelId string, updateMessage models.ApplicationUpdateMessage) (*octopusdeploy.Release, bool, error) {
+func (o *LiveOctopusClient) getRelease(project models.ArgoCDProjectExpanded, version types.OctopusReleaseVersion, channel *octopusdeploy.Channel, updateMessage models.ApplicationUpdateMessage) (*octopusdeploy.Release, bool, error) {
 	var octopusReleases *octopusdeploy.Releases
 	err := retry.Do(
 		func() error {
@@ -437,7 +437,7 @@ func (o *LiveOctopusClient) getRelease(project models.ArgoCDProjectExpanded, ver
 	}
 
 	// Get the latest package versions
-	defaultPackages, err := o.getDefaultPackages(project, channelId)
+	defaultPackages, err := o.getDefaultPackages(project, channel.ID)
 
 	if err != nil {
 		return nil, false, err
@@ -448,7 +448,7 @@ func (o *LiveOctopusClient) getRelease(project models.ArgoCDProjectExpanded, ver
 
 	if len(existingReleases) == 0 {
 		release := &octopusdeploy.Release{
-			ChannelID:        channelId,
+			ChannelID:        channel.ID,
 			ProjectID:        project.Project.ID,
 			Version:          fmt.Sprint(version),
 			SelectedPackages: finalPackages,
