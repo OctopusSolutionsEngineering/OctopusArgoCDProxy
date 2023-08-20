@@ -117,19 +117,11 @@ func (o *LiveOctopusClient) IsDeployed(project *octopusdeploy.Project, releaseVe
 }
 
 func (o *LiveOctopusClient) GetLatestDeploymentRelease(project *octopusdeploy.Project, environment *octopusdeploy.Environment) (*octopusdeploy.Release, error) {
-	// TODO: we can do this more efficiently with version 2 of the client library
-
-	var octopusReleases *octopusdeploy.Releases
+	var octopusReleases []*octopusdeploy.Release
 	err := retry.Do(
 		func() error {
 			var err error
-			octopusReleases, err = o.client.Releases.Get(octopusdeploy.ReleasesQuery{
-				IDs:                nil,
-				IgnoreChannelRules: false,
-				Skip:               0,
-				Take:               10000,
-			})
-
+			octopusReleases, err = o.client.Projects.GetReleases(project)
 			return err
 		}, retry_config.RetryOptions...)
 
@@ -137,19 +129,15 @@ func (o *LiveOctopusClient) GetLatestDeploymentRelease(project *octopusdeploy.Pr
 		return nil, err
 	}
 
-	projectReleases := lo.Filter(octopusReleases.Items, func(item *octopusdeploy.Release, index int) bool {
-		return item.ProjectID == project.ID
-	})
-
-	if len(projectReleases) == 0 {
+	if len(octopusReleases) == 0 {
 		return nil, nil
 	}
 
-	slices.SortFunc(projectReleases, func(a, b *octopusdeploy.Release) bool {
+	slices.SortFunc(octopusReleases, func(a, b *octopusdeploy.Release) bool {
 		return a.Assembled.After(b.Assembled)
 	})
 
-	for _, release := range projectReleases {
+	for _, release := range octopusReleases {
 		progression, err := o.client.Deployments.GetProgression(release)
 
 		if err != nil {
@@ -169,19 +157,11 @@ func (o *LiveOctopusClient) GetLatestDeploymentRelease(project *octopusdeploy.Pr
 }
 
 func (o *LiveOctopusClient) GetLatestRelease(project *octopusdeploy.Project) (*octopusdeploy.Release, error) {
-	// TODO: we can do this more efficiently with version 2 of the client library
-
-	var octopusReleases *octopusdeploy.Releases
+	var octopusReleases []*octopusdeploy.Release
 	err := retry.Do(
 		func() error {
 			var err error
-			octopusReleases, err = o.client.Releases.Get(octopusdeploy.ReleasesQuery{
-				IDs:                nil,
-				IgnoreChannelRules: false,
-				Skip:               0,
-				Take:               10000,
-			})
-
+			octopusReleases, err = o.client.Projects.GetReleases(project)
 			return err
 		}, retry_config.RetryOptions...)
 
@@ -189,33 +169,23 @@ func (o *LiveOctopusClient) GetLatestRelease(project *octopusdeploy.Project) (*o
 		return nil, err
 	}
 
-	projectReleases := lo.Filter(octopusReleases.Items, func(item *octopusdeploy.Release, index int) bool {
-		return item.ProjectID == project.ID
-	})
-
-	if len(projectReleases) == 0 {
+	if len(octopusReleases) == 0 {
 		return nil, nil
 	}
 
-	slices.SortFunc(projectReleases, func(a, b *octopusdeploy.Release) bool {
+	slices.SortFunc(octopusReleases, func(a, b *octopusdeploy.Release) bool {
 		return a.Assembled.After(b.Assembled)
 	})
 
-	return projectReleases[0], nil
+	return octopusReleases[0], nil
 }
 
 func (o *LiveOctopusClient) GetReleaseVersions(project *octopusdeploy.Project) ([]types.OctopusReleaseVersion, error) {
-
-	var octopusReleases *octopusdeploy.Releases
+	var octopusReleases []*octopusdeploy.Release
 	err := retry.Do(
 		func() error {
 			var err error
-			octopusReleases, err = o.client.Releases.Get(octopusdeploy.ReleasesQuery{
-				IDs:                nil,
-				IgnoreChannelRules: false,
-				Skip:               0,
-				Take:               1000,
-			})
+			octopusReleases, err = o.client.Projects.GetReleases(project)
 			return err
 		}, retry_config.RetryOptions...)
 
@@ -223,8 +193,8 @@ func (o *LiveOctopusClient) GetReleaseVersions(project *octopusdeploy.Project) (
 		return nil, err
 	}
 
-	projectReleases := lo.FilterMap(octopusReleases.Items, func(item *octopusdeploy.Release, index int) (types.OctopusReleaseVersion, bool) {
-		return types.OctopusReleaseVersion(item.Version), item.ProjectID == project.ID
+	projectReleases := lo.Map(octopusReleases, func(item *octopusdeploy.Release, index int) types.OctopusReleaseVersion {
+		return types.OctopusReleaseVersion(item.Version)
 	})
 
 	return projectReleases, nil
