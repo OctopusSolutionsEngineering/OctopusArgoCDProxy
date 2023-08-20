@@ -64,7 +64,9 @@ In the variable names below, `namespace` must be replaced with the namespace hos
 
 * `Metadata.ArgoCD.Application[namespace/applicationname].Environment` - Set the value to the name of an Octopus environment. This links the ArgoCD Application to an Octopus environment.
 * `Metadata.ArgoCD.Application[namespace/applicationname].ImageForReleaseVersion` - Set the value to a Docker image included in an ArgoCD Application. The tag of the Docker image will be used when creating the Octopus release version.
-* `Metadata.ArgoCD.Application[namespace/applicationname].ImageForPackageVersion[actionname:packagename]` - Set the value to a Docker image included in an ArgoCD Application. This sets the value of the package defined in the action called `actioname` with the name `packagename` to the version of the linked image tag. 
+* `Metadata.ArgoCD.Application[namespace/applicationname].ImageForPackageVersion[actionname:packagename]` - Set the value to a Docker image included in an ArgoCD Application. This sets the value of the package defined in the action called `actioname` with the name `packagename` to the version of the linked image tag.
+
+![image](https://github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/assets/160104/106f7811-0d47-4a81-a7a0-d96382bd855b)
 
 Triggers are configured in the `argocd-notifications-cm` ConfigMap:
 ```
