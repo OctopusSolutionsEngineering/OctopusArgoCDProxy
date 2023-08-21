@@ -535,7 +535,7 @@ func (o *LiveOctopusClient) getProjectsMatchingArgoCDApplication(allProjects []m
 				return "", false
 			}
 
-			return variable.Value, true
+			return variable.Value, len(strings.TrimSpace(variable.Value)) != 0
 		})
 
 		appNameChannel := lo.FilterMap(project.Variables.Variables, func(variable *octopusdeploy.Variable, index int) (string, bool) {
@@ -545,7 +545,7 @@ func (o *LiveOctopusClient) getProjectsMatchingArgoCDApplication(allProjects []m
 				return "", false
 			}
 
-			return variable.Value, true
+			return variable.Value, len(strings.TrimSpace(variable.Value)) != 0
 		})
 
 		channel := ""
@@ -560,7 +560,7 @@ func (o *LiveOctopusClient) getProjectsMatchingArgoCDApplication(allProjects []m
 				return "", false
 			}
 
-			return variable.Value, true
+			return variable.Value, len(strings.TrimSpace(variable.Value)) != 0
 		})
 
 		packageVersionImages := lo.FilterMap(project.Variables.Variables, func(variable *octopusdeploy.Variable, index int) (models.ImagePackageVersion, bool) {
