@@ -573,7 +573,7 @@ func (o *LiveOctopusClient) getProjectsMatchingArgoCDApplication(allProjects []m
 			return models.ImagePackageVersion{
 				Image:            variable.Value,
 				PackageReference: match[2],
-			}, true
+			}, len(strings.TrimSpace(variable.Value)) != 0
 		})
 
 		releaseVersionImage := ""
