@@ -20,10 +20,20 @@ type createAndDeployReleaseDetails struct {
 
 type mockOctopusClient struct {
 	createAndDeployReleaseDetails []createAndDeployReleaseDetails
-	called                        chan bool
+	createdRelease                chan bool
+	foundProjects                 chan bool
+	findProject                   bool
 }
 
 func (c *mockOctopusClient) GetProjects(updateMessage models.ApplicationUpdateMessage) ([]models.ArgoCDProjectExpanded, error) {
+	defer func() {
+		go func() { c.foundProjects <- true }()
+	}()
+
+	if !c.findProject {
+		return nil, nil
+	}
+
 	return []models.ArgoCDProjectExpanded{
 		models.ArgoCDProjectExpanded{
 			Project: &octopusdeploy.Project{
@@ -55,7 +65,7 @@ func (c *mockOctopusClient) CreateAndDeployRelease(project models.ArgoCDProjectE
 	})
 
 	defer func() {
-		c.called <- true
+		go func() { c.createdRelease <- true }()
 	}()
 
 	return nil
@@ -88,15 +98,18 @@ func (c *mockOctopusClient) GetLatestDeploymentRelease(project *octopusdeploy.Pr
 	return nil, nil
 }
 
-func createMockOctopusClient() (chan bool, octopus_apis.OctopusClient) {
+func createMockOctopusClient(findProjects bool) (chan bool, chan bool, octopus_apis.OctopusClient) {
 	calledChannel := make(chan bool)
+	foundProjects := make(chan bool)
 
 	client := &mockOctopusClient{
 		createAndDeployReleaseDetails: nil,
-		called:                        calledChannel,
+		createdRelease:                calledChannel,
+		findProject:                   findProjects,
+		foundProjects:                 foundProjects,
 	}
 
-	return calledChannel, client
+	return calledChannel, foundProjects, client
 }
 
 func createReleaseHandler(versioner versioners.ReleaseVersioner, client octopus_apis.OctopusClient) (*CreateReleaseHandler, error) {
@@ -115,8 +128,8 @@ func createReleaseHandler(versioner versioners.ReleaseVersioner, client octopus_
 	}, nil
 }
 
-func TestNewReleaseCreation(t *testing.T) {
-	calledChannel, client := createMockOctopusClient()
+func TestNoProjects(t *testing.T) {
+	_, foundProjects, client := createMockOctopusClient(false)
 
 	handler, err := createReleaseHandler(&versioners.SimpleRedeploymentVersioner{}, client)
 
@@ -141,24 +154,15 @@ func TestNewReleaseCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	<-calledChannel
+	<-foundProjects
 
-	_, exists := lo.Find(handler.octo.(*mockOctopusClient).createAndDeployReleaseDetails, func(item createAndDeployReleaseDetails) bool {
-		return item.project.Project.Name == "Project 1" &&
-			item.project.Environment.Name == "Development" &&
-			item.project.Lifecycle.Name == "Default" &&
-			item.project.Channel.Name == "Default" &&
-			item.project.ReleaseVersionImage == "" &&
-			item.version == "0.0.3"
-	})
-
-	if !exists {
-		t.Fatal("must have had a request to create a new release")
+	if len(handler.octo.(*mockOctopusClient).createAndDeployReleaseDetails) != 0 {
+		t.Fatal("must not have created a release")
 	}
 }
 
 func TestExistingReleaseCreation2(t *testing.T) {
-	calledChannel, client := createMockOctopusClient()
+	calledChannel, _, client := createMockOctopusClient(true)
 
 	versioner := versioners.NewSimpleVersioner(client)
 
@@ -205,7 +209,7 @@ func TestExistingReleaseCreation2(t *testing.T) {
 }
 
 func TestExistingReleaseCreation(t *testing.T) {
-	calledChannel, client := createMockOctopusClient()
+	calledChannel, _, client := createMockOctopusClient(true)
 
 	handler, err := createReleaseHandler(&versioners.SimpleRedeploymentVersioner{}, client)
 
@@ -239,6 +243,48 @@ func TestExistingReleaseCreation(t *testing.T) {
 			item.project.Channel.Name == "Default" &&
 			item.project.ReleaseVersionImage == "" &&
 			item.version == "0.0.2"
+	})
+
+	if !exists {
+		t.Fatal("must have had a request to create a new release")
+	}
+}
+
+func TestNewReleaseCreation(t *testing.T) {
+	calledChannel, _, client := createMockOctopusClient(true)
+
+	handler, err := createReleaseHandler(&versioners.SimpleRedeploymentVersioner{}, client)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	message := models.ApplicationUpdateMessage{
+		Application:    "myapplication",
+		Namespace:      "development",
+		State:          "success",
+		TargetUrl:      "",
+		TargetRevision: "0.0.3",
+		CommitSha:      "abcdefghijklmnop",
+		Images:         nil,
+		Project:        "default",
+	}
+
+	err = handler.CreateRelease(message)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	<-calledChannel
+
+	_, exists := lo.Find(handler.octo.(*mockOctopusClient).createAndDeployReleaseDetails, func(item createAndDeployReleaseDetails) bool {
+		return item.project.Project.Name == "Project 1" &&
+			item.project.Environment.Name == "Development" &&
+			item.project.Lifecycle.Name == "Default" &&
+			item.project.Channel.Name == "Default" &&
+			item.project.ReleaseVersionImage == "" &&
+			item.version == "0.0.3"
 	})
 
 	if !exists {
