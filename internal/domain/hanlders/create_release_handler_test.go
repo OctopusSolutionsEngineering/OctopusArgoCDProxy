@@ -79,9 +79,13 @@ func (c *mockOctopusClient) GetLatestRelease(project *octopusdeploy.Project) (*o
 }
 
 func (c *mockOctopusClient) GetLatestDeploymentRelease(project *octopusdeploy.Project, environment *octopusdeploy.Environment) (*octopusdeploy.Release, error) {
-	return &octopusdeploy.Release{
-		Version: "0.0.2",
-	}, nil
+	if environment.Name == "Development" {
+		return &octopusdeploy.Release{
+			Version: "0.0.2",
+		}, nil
+	}
+
+	return nil, nil
 }
 
 func createMockOctopusClient() (chan bool, octopus_apis.OctopusClient) {
@@ -189,7 +193,9 @@ func TestExistingReleaseCreation2(t *testing.T) {
 			item.project.Lifecycle.Name == "Default" &&
 			item.project.Channel.Name == "Default" &&
 			item.project.ReleaseVersionImage == "" &&
+			// We deploy the version sent to us in the message
 			strings.HasPrefix(string(item.version), "0.0.2") &&
+			// But a metadata value should be present in the version to indicate a new release version
 			strings.ContainsRune(string(item.version), '+')
 	})
 
