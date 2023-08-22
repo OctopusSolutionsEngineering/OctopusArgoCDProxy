@@ -1,6 +1,7 @@
 package hanlders
 
 import (
+	"errors"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/models"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/domain/versioners"
 	"github.com/OctopusSolutionsEngineering/OctopusArgoCDProxy/internal/infrastructure/apploggers"
@@ -142,6 +143,10 @@ func (c CreateReleaseHandler) CreateRelease(applicationUpdateMessage models.Appl
 }
 
 func (c CreateReleaseHandler) getImages(applicationUpdateMessage models.ApplicationUpdateMessage) ([]string, error) {
+	if c.argo == nil {
+		return nil, errors.New("the agro client is nil")
+	}
+
 	tree, err := c.argo.GetApplicationResourceTree(applicationUpdateMessage.Application, applicationUpdateMessage.Namespace)
 
 	if err != nil {
