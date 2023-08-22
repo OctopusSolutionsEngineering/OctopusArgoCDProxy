@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -36,9 +37,10 @@ var ApplicationImagePackageVersionVariable = regexp.MustCompile("^Metadata.ArgoC
 
 // LiveOctopusClient interacts with a live Octopus API endpoint, and implements caching to reduce network calls.
 type LiveOctopusClient struct {
-	client   *octopusdeploy.Client
-	logger   apploggers.AppLogger
-	bigCache *bigcache.BigCache
+	client       *octopusdeploy.Client
+	logger       apploggers.AppLogger
+	bigCache     *bigcache.BigCache
+	applications sync.Map
 }
 
 func NewLiveOctopusClient() (*LiveOctopusClient, error) {
@@ -57,9 +59,10 @@ func NewLiveOctopusClient() (*LiveOctopusClient, error) {
 	bCache, err := bigcache.New(context.Background(), bigcache.DefaultConfig(5*time.Minute))
 
 	return &LiveOctopusClient{
-		client:   client,
-		logger:   logger,
-		bigCache: bCache,
+		client:       client,
+		logger:       logger,
+		bigCache:     bCache,
+		applications: sync.Map{},
 	}, nil
 }
 
@@ -195,7 +198,7 @@ func (o *LiveOctopusClient) GetReleaseVersions(project *octopusdeploy.Project) (
 }
 
 func (o *LiveOctopusClient) GetProjects(updateMessage models.ApplicationUpdateMessage) ([]models.ArgoCDProjectExpanded, error) {
-	allProjects, err := o.getAllProjectAndVariables()
+	allProjects, err := o.getAllProjectAndVariables(updateMessage)
 
 	if err != nil {
 		return nil, err
@@ -532,7 +535,7 @@ func (o *LiveOctopusClient) getProjectsMatchingArgoCDApplication(allProjects []m
 				return "", false
 			}
 
-			return variable.Value, true
+			return variable.Value, len(strings.TrimSpace(variable.Value)) != 0
 		})
 
 		appNameChannel := lo.FilterMap(project.Variables.Variables, func(variable *octopusdeploy.Variable, index int) (string, bool) {
@@ -542,7 +545,7 @@ func (o *LiveOctopusClient) getProjectsMatchingArgoCDApplication(allProjects []m
 				return "", false
 			}
 
-			return variable.Value, true
+			return variable.Value, len(strings.TrimSpace(variable.Value)) != 0
 		})
 
 		channel := ""
@@ -557,7 +560,7 @@ func (o *LiveOctopusClient) getProjectsMatchingArgoCDApplication(allProjects []m
 				return "", false
 			}
 
-			return variable.Value, true
+			return variable.Value, len(strings.TrimSpace(variable.Value)) != 0
 		})
 
 		packageVersionImages := lo.FilterMap(project.Variables.Variables, func(variable *octopusdeploy.Variable, index int) (models.ImagePackageVersion, bool) {
@@ -570,7 +573,7 @@ func (o *LiveOctopusClient) getProjectsMatchingArgoCDApplication(allProjects []m
 			return models.ImagePackageVersion{
 				Image:            variable.Value,
 				PackageReference: match[2],
-			}, true
+			}, len(strings.TrimSpace(variable.Value)) != 0
 		})
 
 		releaseVersionImage := ""
@@ -632,17 +635,28 @@ func (o *LiveOctopusClient) getProjectVariables(projectId string) (*octopusdeplo
 	return variables, nil
 }
 
-func (o *LiveOctopusClient) getAllProjectAndVariables() ([]models.OctopusProjectAndVars, error) {
+func (o *LiveOctopusClient) getAllProjectAndVariables(updateMessage models.ApplicationUpdateMessage) ([]models.OctopusProjectAndVars, error) {
+	// See if we have encountered this application before
+	_, exists := o.applications.Load(updateMessage.Namespace + "/" + updateMessage.Application)
+
 	// Load projects, and cache the results
 	octopusProjects := &octopusdeploy.Projects{}
 	projectsData, err := o.bigCache.Get("AllProjects")
-	if err == nil {
+
+	// If this is a new application (i.e. we have never seen it before), skip the cache.
+	// This lets us get a refreshed project list for new applications, which will likely
+	// happen when a new ArgoCD project is created in Octopus and a new Application is created
+	// in ArgoCD with the correct triggers configured.
+	if err == nil && exists {
 		err = json.Unmarshal(projectsData, octopusProjects)
 
 		if err != nil {
 			return nil, err
 		}
 	} else {
+		// note the new application
+		o.applications.Store(updateMessage.Namespace+"/"+updateMessage.Application, true)
+
 		err = retry.Do(
 			func() error {
 				var err error
